@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import numpy as np
-from scipy.constants import Boltzmann, hbar
 from surface_potential_analysis.basis.basis import (
     FundamentalBasis,
     FundamentalPositionBasis,
@@ -17,8 +16,9 @@ from surface_potential_analysis.basis.evenly_spaced_basis import (
     EvenlySpacedTransformedPositionBasis,
 )
 from surface_potential_analysis.basis.stacked_basis import (
-    StackedBasis,
-    StackedBasisLike,
+    TupleBasis,
+    TupleBasisLike,
+    TupleBasisWithLengthLike,
 )
 from surface_potential_analysis.hamiltonian_builder.momentum_basis import (
     total_surface_hamiltonian,
@@ -28,15 +28,8 @@ from surface_potential_analysis.kernel.conversion import (
     convert_noise_operator_list_to_basis,
 )
 from surface_potential_analysis.kernel.gaussian import (
-    get_effective_gaussian_noise_operators,
-    get_gaussian_noise_kernel,
-    get_temperature_corrected_noise_operators,
-)
-from surface_potential_analysis.kernel.kernel import (
-    get_noise_kernel as get_noise_kernel_generic,
-)
-from surface_potential_analysis.kernel.kernel import (
-    get_single_factorized_noise_operators,
+    get_effective_gaussian_noise_kernel,
+    get_temperature_corrected_effective_gaussian_noise_operators,
 )
 from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.potential.conversion import convert_potential_to_basis
@@ -102,6 +95,7 @@ class SimulationConfig:
     resolution: tuple[int]
     n_bands: int
     type: Literal["bloch", "wannier"]
+    temperature: float
 
 
 HYDROGEN_NICKEL_SYSTEM = PeriodicSystem(
@@ -123,22 +117,22 @@ FREE_LITHIUM_SYSTEM = PeriodicSystem(
 
 def get_potential(
     system: PeriodicSystem,
-) -> Potential[StackedBasis[FundamentalTransformedPositionBasis1d[Literal[3]]]]:
+) -> Potential[TupleBasis[FundamentalTransformedPositionBasis1d[Literal[3]]]]:
     delta_x = np.sqrt(3) * system.lattice_constant / 2
     axis = FundamentalTransformedPositionBasis1d[Literal[3]](np.array([delta_x]), 3)
     vector = 0.25 * system.barrier_energy * np.array([2, -1, -1]) * np.sqrt(3)
-    return {"basis": StackedBasis(axis), "data": vector}
+    return {"basis": TupleBasis(axis), "data": vector}
 
 
 def get_interpolated_potential(
     system: PeriodicSystem,
     resolution: tuple[_L0Inv],
 ) -> Potential[
-    StackedBasisLike[FundamentalTransformedPositionBasis[_L0Inv, Literal[1]]]
+    TupleBasisWithLengthLike[FundamentalTransformedPositionBasis[_L0Inv, Literal[1]]]
 ]:
     potential = get_potential(system)
     old = potential["basis"][0]
-    basis = StackedBasis(
+    basis = TupleBasis(
         TransformedPositionBasis1d[_L0Inv, Literal[3]](
             old.delta_x,
             old.n,
@@ -157,13 +151,13 @@ def get_extended_interpolated_potential(
     shape: tuple[_L0Inv],
     resolution: tuple[_L1Inv],
 ) -> Potential[
-    StackedBasisLike[
+    TupleBasisWithLengthLike[
         EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]]
     ]
 ]:
     interpolated = get_interpolated_potential(system, resolution)
     old = interpolated["basis"][0]
-    basis = StackedBasis(
+    basis = TupleBasis(
         EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]](
             old.delta_x * shape[0],
             n=old.n,
@@ -182,7 +176,9 @@ def _get_full_hamiltonian(
     resolution: tuple[_L0Inv],
     *,
     bloch_fraction: np.ndarray[tuple[Literal[1]], np.dtype[np.float64]] | None = None,
-) -> SingleBasisOperator[StackedBasisLike[FundamentalPositionBasis[int, Literal[1]]],]:
+) -> SingleBasisOperator[
+    TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]],
+]:
     bloch_fraction = np.array([0]) if bloch_fraction is None else bloch_fraction
 
     potential = get_extended_interpolated_potential(system, shape, resolution)
@@ -198,13 +194,13 @@ def _get_wavepacket(
     config: SimulationConfig,
 ) -> BlochWavefunctionListWithEigenvaluesList[
     EvenlySpacedBasis[int, int, int],
-    StackedBasisLike[FundamentalBasis[int]],
-    StackedBasisLike[FundamentalPositionBasis[int, Literal[1]]],
+    TupleBasisLike[FundamentalBasis[int]],
+    TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]],
 ]:
     def hamiltonian_generator(
         bloch_fraction: np.ndarray[tuple[Literal[1]], np.dtype[np.float64]],
     ) -> SingleBasisOperator[
-        StackedBasisLike[FundamentalPositionBasis[int, Literal[1]]]
+        TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]]
     ]:
         return _get_full_hamiltonian(
             system,
@@ -213,7 +209,6 @@ def _get_wavepacket(
             bloch_fraction=bloch_fraction,
         )
 
-    StackedBasis(FundamentalBasis)
     return generate_wavepacket(
         hamiltonian_generator,
         save_bands=EvenlySpacedBasis(config.n_bands, 1, 0),
@@ -224,11 +219,11 @@ def _get_wavepacket(
 def get_localisation_operator(
     wavefunctions: BlochWavefunctionListWithEigenvaluesList[
         EvenlySpacedBasis[int, int, int],
-        StackedBasisLike[FundamentalBasis[int]],
-        StackedBasisLike[FundamentalPositionBasis[int, Literal[1]]],
+        TupleBasisLike[FundamentalBasis[int]],
+        TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]],
     ],
 ) -> LocalizationOperator[
-    StackedBasisLike[FundamentalBasis[int]],
+    TupleBasisLike[FundamentalBasis[int]],
     FundamentalBasis[int],
     EvenlySpacedBasis[int, int, int],
 ]:
@@ -236,7 +231,7 @@ def get_localisation_operator(
         wavefunctions,
         options=Wannier90Options[FundamentalBasis[int]](
             projection={
-                "basis": StackedBasis(
+                "basis": TupleBasis(
                     FundamentalBasis[int](wavefunctions["basis"][0][0].n),
                 ),
             },
@@ -260,83 +255,30 @@ def get_hamiltonian(
 def get_noise_kernel(
     system: PeriodicSystem,
     config: SimulationConfig,
-    temperature: float,
 ) -> SingleBasisNoiseKernel[ExplicitStackedBasisWithLength[Any, Any]]:
-    hamiltonian = _get_full_hamiltonian(system, config.shape, config.resolution)
-    lambda_ = system.lattice_constant / 2
-    # mu = A / lambda
-    mu = np.sqrt(2 * system.eta * Boltzmann * temperature / hbar**2)
-    a = mu * lambda_
+    hamiltonian = get_hamiltonian(system, config)
 
-    kernel = get_gaussian_noise_kernel(
+    kernel = get_effective_gaussian_noise_kernel(
         hamiltonian["basis"][0],
-        a,
-        lambda_,
+        system.eta,
+        config.temperature,
     )
 
-    actual_hamiltonian = get_hamiltonian(system, config)
-    converted = convert_diagonal_kernel_to_basis(kernel, actual_hamiltonian["basis"])
-
-    data = (
-        converted["data"]
-        .reshape(*converted["basis"][0].shape, *converted["basis"][1].shape)
-        .swapaxes(0, 1)
-        .reshape(converted["basis"][0].n, converted["basis"][1].n)
-    )
-    data += np.conj(np.transpose(data))
-    data /= 2
-    converted["data"] = (
-        data.reshape(
-            converted["basis"][0].shape[1],
-            converted["basis"][0].shape[0],
-            *converted["basis"][1].shape,
-        )
-        .swapaxes(0, 1)
-        .ravel()
-    )
-    operators = get_single_factorized_noise_operators(converted)
-    corrected = get_temperature_corrected_noise_operators(
-        actual_hamiltonian,
-        operators,
-        temperature,
-    )
-    corrected_kernel = get_noise_kernel_generic(corrected)
-    data = (
-        corrected_kernel["data"]
-        .reshape(
-            *corrected_kernel["basis"][0].shape,
-            *corrected_kernel["basis"][1].shape,
-        )
-        .swapaxes(0, 1)
-        .reshape(corrected_kernel["basis"][0].n, corrected_kernel["basis"][1].n)
-    )
-    data += np.conj(np.transpose(data))
-    data /= 2
-    corrected_kernel["data"] = (
-        data.reshape(
-            corrected_kernel["basis"][0].shape[1],
-            corrected_kernel["basis"][0].shape[0],
-            *corrected_kernel["basis"][1].shape,
-        )
-        .swapaxes(0, 1)
-        .ravel()
-    )
-    return corrected_kernel
+    return convert_diagonal_kernel_to_basis(kernel, hamiltonian["basis"])
 
 
 def get_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
-    temperature: float,
 ) -> SingleBasisNoiseOperatorList[
     FundamentalBasis[int],
     ExplicitStackedBasisWithLength[Any, Any],
 ]:
     hamiltonian = _get_full_hamiltonian(system, config.shape, config.resolution)
-    operators = get_effective_gaussian_noise_operators(
+    operators = get_temperature_corrected_effective_gaussian_noise_operators(
         hamiltonian,
         system.eta,
-        temperature,
+        config.temperature,
     )
 
     actual_hamiltonian = get_hamiltonian(system, config)

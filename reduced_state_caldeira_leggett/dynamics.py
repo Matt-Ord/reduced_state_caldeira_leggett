@@ -13,9 +13,6 @@ from surface_potential_analysis.operator.operator import SingleBasisOperator
 from surface_potential_analysis.operator.operator_list import (
     select_operator,
 )
-from surface_potential_analysis.state_vector.conversion import (
-    convert_state_vector_to_basis,
-)
 from surface_potential_analysis.state_vector.state_vector_list import (
     StateVectorList,
 )
@@ -34,13 +31,12 @@ from .system import (
 if TYPE_CHECKING:
     from surface_potential_analysis.basis.basis import (
         FundamentalBasis,
-        FundamentalPositionBasis,
     )
     from surface_potential_analysis.basis.explicit_basis import (
         ExplicitStackedBasisWithLength,
     )
     from surface_potential_analysis.basis.stacked_basis import (
-        StackedBasisLike,
+        TupleBasisLike,
     )
     from surface_potential_analysis.state_vector.state_vector import (
         StateVector,
@@ -91,21 +87,20 @@ def get_stochastic_evolution(
     step: int,
     dt_ratio: float = 500,
 ) -> StateVectorList[
-    StackedBasisLike[
+    TupleBasisLike[
         FundamentalBasis[Literal[1]],
         EvenlySpacedTimeBasis[int, int, int],
     ],
-    StackedBasisLike[FundamentalPositionBasis[int, Literal[1]]],
+    ExplicitStackedBasisWithLength[Any, Any],
 ]:
     hamiltonian = get_hamiltonian(system, config)
 
     initial_state = get_initial_state(system, config)
-    converted = convert_state_vector_to_basis(initial_state, hamiltonian["basis"][0])
+
     dt = hbar / (np.max(np.abs(hamiltonian["data"])) * dt_ratio)
     times = EvenlySpacedTimeBasis(n, step, 0, n * step * dt)
-    temperature = 1550
 
-    operators = get_noise_operators(system, config, temperature)
+    operators = get_noise_operators(system, config)
     operator_list = list[SingleBasisOperator[Any]]()
     args = np.argsort(np.abs(operators["eigenvalue"]))[::-1]
 
@@ -132,7 +127,7 @@ def get_stochastic_evolution(
     print(times.fundamental_dt * np.max(np.abs(hamiltonian["data"])) / hbar)  # noqa: T201
 
     return solve_stochastic_schrodinger_equation_rust_banded(
-        converted,
+        initial_state,
         times,
         hamiltonian,
         operator_list,
