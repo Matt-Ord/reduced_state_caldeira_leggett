@@ -13,21 +13,16 @@ from surface_potential_analysis.operator.operator import SingleBasisOperator
 from surface_potential_analysis.operator.operator_list import (
     select_operator,
 )
-from surface_potential_analysis.state_vector.conversion import (
-    convert_state_vector_to_basis,
-)
 from surface_potential_analysis.state_vector.state_vector_list import (
     StateVectorList,
 )
 from surface_potential_analysis.util.decorators import npy_cached_dict, timed
-from surface_potential_analysis.wavepacket.get_eigenstate import get_wannier_basis
 
 from .system import (
     PeriodicSystem,
     SimulationConfig,
-    _get_wavepacket,
     get_hamiltonian,
-    get_localisation_operator,
+    get_initial_state,
     get_noise_operators,
 )
 
@@ -36,33 +31,12 @@ if TYPE_CHECKING:
         FundamentalBasis,
         FundamentalPositionBasis,
     )
-    from surface_potential_analysis.basis.explicit_basis import (
-        ExplicitStackedBasisWithLength,
-    )
     from surface_potential_analysis.basis.stacked_basis import (
         StackedBasisLike,
-    )
-    from surface_potential_analysis.state_vector.state_vector import (
-        StateVector,
     )
     from surface_potential_analysis.state_vector.state_vector_list import (
         StateVectorList,
     )
-
-
-def get_initial_state(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> StateVector[ExplicitStackedBasisWithLength[Any, Any]]:
-    wavefunctions = _get_wavepacket(system, config)
-    operator = get_localisation_operator(wavefunctions)
-    basis = get_wannier_basis(wavefunctions, operator)
-    data = np.zeros(basis.n, dtype=np.complex128)
-    data[0] = 1
-    return {
-        "basis": basis,
-        "data": data,
-    }
 
 
 def _get_stochastic_evolution_cache(
@@ -100,10 +74,9 @@ def get_stochastic_evolution(
     hamiltonian = get_hamiltonian(system, config)
 
     initial_state = get_initial_state(system, config)
-    converted = convert_state_vector_to_basis(initial_state, hamiltonian["basis"][0])
     dt = hbar / (np.max(np.abs(hamiltonian["data"])) * dt_ratio)
     times = EvenlySpacedTimeBasis(n, step, 0, n * step * dt)
-    temperature = 1550
+    temperature = 155
 
     operators = get_noise_operators(system, config, temperature)
     operator_list = list[SingleBasisOperator[Any]]()
@@ -132,7 +105,7 @@ def get_stochastic_evolution(
     print(times.fundamental_dt * np.max(np.abs(hamiltonian["data"])) / hbar)  # noqa: T201
 
     return solve_stochastic_schrodinger_equation_rust_banded(
-        converted,
+        initial_state,
         times,
         hamiltonian,
         operator_list,

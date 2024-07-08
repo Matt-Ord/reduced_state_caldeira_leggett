@@ -20,6 +20,7 @@ from surface_potential_analysis.basis.stacked_basis import (
     StackedBasis,
     StackedBasisLike,
 )
+from surface_potential_analysis.basis.util import BasisUtil
 from surface_potential_analysis.hamiltonian_builder.momentum_basis import (
     total_surface_hamiltonian,
 )
@@ -50,6 +51,7 @@ from surface_potential_analysis.stacked_basis.conversion import (
 from surface_potential_analysis.wavepacket.get_eigenstate import (
     get_full_bloch_hamiltonian,
     get_full_wannier_hamiltonian,
+    get_wannier_basis,
 )
 from surface_potential_analysis.wavepacket.localization import (
     Wannier90Options,
@@ -70,6 +72,7 @@ if TYPE_CHECKING:
     )
     from surface_potential_analysis.operator.operator import SingleBasisOperator
     from surface_potential_analysis.potential.potential import Potential
+    from surface_potential_analysis.state_vector.state_vector import StateVector
     from surface_potential_analysis.wavepacket.localization_operator import (
         LocalizationOperator,
     )
@@ -94,20 +97,30 @@ class PeriodicSystem:
         return 2 * self.mass * self.gamma
 
 
+# @dataclass
+# class SimulationConfig:
+#     """Configure the detail of the simulation."""
+
+#     shape: tuple[int]
+#     resolution: tuple[int]
+#     n_bands: int
+#     type: Literal["bloch", "wannier"]
+
+
 @dataclass
 class SimulationConfig:
     """Configure the detail of the simulation."""
 
-    shape: tuple[int]
-    resolution: tuple[int]
+    shape: tuple[int, ...]
+    resolution: tuple[int, ...]
     n_bands: int
     type: Literal["bloch", "wannier"]
 
 
 HYDROGEN_NICKEL_SYSTEM = PeriodicSystem(
     id="HNi",
-    barrier_energy=2.5593864192e-20,
-    lattice_constant=2.46e-10 / np.sqrt(2),
+    barrier_energy=160,  # 160 meV, 2.5593864192e-20
+    lattice_constant=2.46,  # 2.46A, 2.46e-10 / np.sqrt(2)
     mass=1.67e-27,
     gamma=0.2e12,
 )
@@ -116,6 +129,22 @@ FREE_LITHIUM_SYSTEM = PeriodicSystem(
     id="LiFree",
     barrier_energy=0,
     lattice_constant=3.615e-10,
+    mass=1.152414898e-26,
+    gamma=1.2e12,
+)
+
+SODIUM_COPPER_SYSTEM = PeriodicSystem(
+    id="NaCu",
+    barrier_energy=55,  # meV
+    lattice_constant=3.615,  # A
+    mass=3.8175458e-26,
+    gamma=0.2e12,
+)
+
+LITHIUM_COPPER_SYSTEM = PeriodicSystem(
+    id="LiCu",
+    barrier_energy=45,  # meV
+    lattice_constant=3.615,  # A
     mass=1.152414898e-26,
     gamma=1.2e12,
 )
@@ -176,16 +205,87 @@ def get_extended_interpolated_potential(
     return {"basis": basis, "data": scaled_potential}
 
 
+def get_2d_111_potential(system: PeriodicSystem, resolution: tuple[_L1Inv, ...]):
+    vector_x = np.array([5.0, 0])
+    vector_y = np.array([0, 5.0])
+    basis_x = FundamentalPositionBasis(vector_x, resolution[0])
+    basis_y = FundamentalPositionBasis(vector_y, resolution[1])
+    full_basis = StackedBasis(basis_x, basis_y)
+    util = BasisUtil(full_basis)
+    x_points = util.x_points_stacked
+
+    # 111 of fcc
+    zeta = 4 * np.pi / (np.sqrt(3) * system.lattice_constant)
+    g = np.array(
+        [
+            np.array([zeta, 0]),
+            np.array([zeta * np.cos(np.pi / 3), zeta * np.sin(np.pi / 3)]),
+            np.array([-zeta * np.cos(np.pi / 3), zeta * np.sin(np.pi / 3)]),
+        ],
+    )
+    V_r = []
+    for r in x_points.T:
+        V_i = 0
+        for g_i in g:
+            V_i += -system.barrier_energy * np.cos(np.inner(g_i, r))
+        V_r.append(V_i)
+    V_r = np.array(V_r)
+    return {"basis": full_basis, "data": V_r}
+
+
+def get_extended_interpolated_2d_111_potential(
+    system: PeriodicSystem,
+    shape: tuple[_L0Inv, ...],
+    resolution: tuple[_L1Inv, ...],
+) -> Potential[
+    StackedBasisLike[
+        EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]]
+    ]
+]:
+    interpolated = get_2d_111_potential(system, resolution)
+    converted = convert_potential_to_basis(
+        interpolated,
+        stacked_basis_as_fundamental_momentum_basis(interpolated["basis"]),
+    )
+    old_x = converted["basis"][0]
+    old_y = converted["basis"][1]
+    basis_x = EvenlySpacedTransformedPositionBasis(
+        old_x.delta_x * shape[0],
+        n=old_x.n,
+        step=shape[0],
+        offset=0,
+    )
+    basis_y = EvenlySpacedTransformedPositionBasis(
+        old_y.delta_x * shape[1],
+        n=old_y.n,
+        step=shape[1],
+        offset=0,
+    )
+    basis = StackedBasis(basis_x, basis_y)
+    # basis = StackedBasis(
+    #     EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]](
+    #         old.delta_x * shape[0],
+    #         n=old.n,
+    #         step=shape[0],
+    #         offset=0,
+    #     ),
+    # )
+    scaled_potential = converted["data"] * np.sqrt(basis.fundamental_n / (basis.n))
+
+    return {"basis": basis, "data": scaled_potential}
+
+
 def _get_full_hamiltonian(
     system: PeriodicSystem,
-    shape: tuple[_L0Inv],
-    resolution: tuple[_L0Inv],
+    shape: tuple[_L0Inv, ...],
+    resolution: tuple[_L0Inv, ...],
     *,
     bloch_fraction: np.ndarray[tuple[Literal[1]], np.dtype[np.float64]] | None = None,
 ) -> SingleBasisOperator[StackedBasisLike[FundamentalPositionBasis[int, Literal[1]]],]:
     bloch_fraction = np.array([0]) if bloch_fraction is None else bloch_fraction
 
-    potential = get_extended_interpolated_potential(system, shape, resolution)
+    # potential = get_extended_interpolated_potential(system, shape, resolution)
+    potential = get_extended_interpolated_2d_111_potential(system, shape, resolution)
     converted = convert_potential_to_basis(
         potential,
         stacked_basis_as_fundamental_position_basis(potential["basis"]),
@@ -193,7 +293,7 @@ def _get_full_hamiltonian(
     return total_surface_hamiltonian(converted, system.mass, bloch_fraction)
 
 
-def _get_wavepacket(
+def get_wavepacket(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> BlochWavefunctionListWithEigenvaluesList[
@@ -208,7 +308,7 @@ def _get_wavepacket(
     ]:
         return _get_full_hamiltonian(
             system,
-            (1,),
+            tuple(1 for _ in config.shape),
             config.resolution,
             bloch_fraction=bloch_fraction,
         )
@@ -248,7 +348,7 @@ def get_hamiltonian(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> SingleBasisOperator[ExplicitStackedBasisWithLength[Any, Any]]:
-    wavefunctions = _get_wavepacket(system, config)
+    wavefunctions = get_wavepacket(system, config)
 
     if config.type == "bloch":
         return as_operator(get_full_bloch_hamiltonian(wavefunctions))
@@ -341,3 +441,18 @@ def get_noise_operators(
 
     actual_hamiltonian = get_hamiltonian(system, config)
     return convert_noise_operator_list_to_basis(operators, actual_hamiltonian["basis"])
+
+
+def get_initial_state(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> StateVector[ExplicitStackedBasisWithLength[Any, Any]]:
+    wavefunctions = get_wavepacket(system, config)
+    operator = get_localisation_operator(wavefunctions)
+    basis = get_wannier_basis(wavefunctions, operator)
+    data = np.zeros(basis.n, dtype=np.complex128)
+    data[0] = 1
+    return {
+        "basis": basis,
+        "data": data,
+    }
