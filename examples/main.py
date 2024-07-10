@@ -13,7 +13,13 @@ from reduced_state_caldeira_leggett.system import (
 )
 
 system = HYDROGEN_NICKEL_SYSTEM
-config = SimulationConfig(shape=(1, 1), resolution=(60, 50), n_bands=3, type="bloch")
+config = SimulationConfig(
+    shape=(1,),
+    resolution=(60,),
+    n_bands=3,
+    type="wannier",
+    temperature=150,
+)
 test = get_2d_111_potential(system, config.resolution)
 plot_2d_111_potential(test)
 plot_2d_state_111_against_t(system, config, n=20, step=10)

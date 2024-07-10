@@ -204,7 +204,7 @@ def get_2d_111_potential(system: PeriodicSystem, resolution: tuple[_L1Inv, ...])
     vector_y = np.array([0, 5.0])
     basis_x = FundamentalPositionBasis(vector_x, resolution[0])
     basis_y = FundamentalPositionBasis(vector_y, resolution[1])
-    full_basis = StackedBasis(basis_x, basis_y)
+    full_basis = TupleBasis(basis_x, basis_y)
     util = BasisUtil(full_basis)
     x_points = util.x_points_stacked
 
@@ -232,7 +232,7 @@ def get_extended_interpolated_2d_111_potential(
     shape: tuple[_L0Inv, ...],
     resolution: tuple[_L1Inv, ...],
 ) -> Potential[
-    StackedBasisLike[
+    TupleBasisWithLengthLike[
         EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]]
     ]
 ]:
@@ -255,7 +255,7 @@ def get_extended_interpolated_2d_111_potential(
         step=shape[1],
         offset=0,
     )
-    basis = StackedBasis(basis_x, basis_y)
+    basis = TupleBasis(basis_x, basis_y)
     # basis = StackedBasis(
     #     EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]](
     #         old.delta_x * shape[0],

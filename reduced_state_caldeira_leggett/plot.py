@@ -52,7 +52,6 @@ from reduced_state_caldeira_leggett.system import (
 )
 
 if TYPE_CHECKING:
-    from surface_potential_analysis.potential.conversion import _BL0
     from surface_potential_analysis.potential.potential import Potential
 
 
