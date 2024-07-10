@@ -17,14 +17,12 @@ from surface_potential_analysis.state_vector.state_vector_list import (
     StateVectorList,
 )
 from surface_potential_analysis.util.decorators import npy_cached_dict, timed
-from surface_potential_analysis.wavepacket.get_eigenstate import get_wannier_basis
 
 from .system import (
     PeriodicSystem,
     SimulationConfig,
-    _get_wavepacket,
     get_hamiltonian,
-    get_localisation_operator,
+    get_initial_state,
     get_noise_operators,
 )
 
@@ -38,27 +36,9 @@ if TYPE_CHECKING:
     from surface_potential_analysis.basis.stacked_basis import (
         TupleBasisLike,
     )
-    from surface_potential_analysis.state_vector.state_vector import (
-        StateVector,
-    )
     from surface_potential_analysis.state_vector.state_vector_list import (
         StateVectorList,
     )
-
-
-def get_initial_state(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> StateVector[ExplicitStackedBasisWithLength[Any, Any]]:
-    wavefunctions = _get_wavepacket(system, config)
-    operator = get_localisation_operator(wavefunctions)
-    basis = get_wannier_basis(wavefunctions, operator)
-    data = np.zeros(basis.n, dtype=np.complex128)
-    data[0] = 1
-    return {
-        "basis": basis,
-        "data": data,
-    }
 
 
 def _get_stochastic_evolution_cache(
@@ -96,7 +76,6 @@ def get_stochastic_evolution(
     hamiltonian = get_hamiltonian(system, config)
 
     initial_state = get_initial_state(system, config)
-
     dt = hbar / (np.max(np.abs(hamiltonian["data"])) * dt_ratio)
     times = EvenlySpacedTimeBasis(n, step, 0, n * step * dt)
 
