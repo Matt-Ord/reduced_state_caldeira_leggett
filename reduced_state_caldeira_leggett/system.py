@@ -9,7 +9,7 @@ from surface_potential_analysis.basis.basis import (
     FundamentalPositionBasis,
     FundamentalTransformedPositionBasis,
     FundamentalTransformedPositionBasis1d,
-    TransformedPositionBasis1d,
+    TransformedPositionBasis,
 )
 from surface_potential_analysis.basis.evenly_spaced_basis import (
     EvenlySpacedBasis,
@@ -20,7 +20,6 @@ from surface_potential_analysis.basis.stacked_basis import (
     TupleBasisLike,
     TupleBasisWithLengthLike,
 )
-from surface_potential_analysis.basis.util import BasisUtil
 from surface_potential_analysis.hamiltonian_builder.momentum_basis import (
     total_surface_hamiltonian,
 )
@@ -135,8 +134,7 @@ SODIUM_COPPER_SYSTEM = PeriodicSystem(
 )
 
 
-# 1d
-def get_potential(
+def _get_fundamental_potential_1d(
     system: PeriodicSystem,
 ) -> Potential[TupleBasis[FundamentalTransformedPositionBasis1d[Literal[3]]]]:
     delta_x = np.sqrt(3) * system.lattice_constant / 2
@@ -145,94 +143,128 @@ def get_potential(
     return {"basis": TupleBasis(axis), "data": vector}
 
 
-def get_interpolated_potential(
-    system: PeriodicSystem,
+def _get_interpolated_potential(
+    potential: Potential[
+        TupleBasisWithLengthLike[
+            *tuple[FundamentalTransformedPositionBasis[Any, Any], ...]
+        ]
+    ],
     resolution: tuple[_L0Inv, ...],
 ) -> Potential[
-    TupleBasisWithLengthLike[FundamentalTransformedPositionBasis[_L0Inv, Literal[1]]]
+    TupleBasisWithLengthLike[*tuple[FundamentalTransformedPositionBasis[Any, Any], ...]]
 ]:
-    potential = get_potential(system)
-    old = potential["basis"][0]
-    basis = TupleBasis(
-        TransformedPositionBasis1d[_L0Inv, Literal[3]](
-            old.delta_x,
-            old.n,
-            resolution[0],
+    interpolated_basis = TupleBasis(
+        *tuple(
+            TransformedPositionBasis[Any, Any, Any](
+                old.delta_x,
+                old.n,
+                r,
+            )
+            for (old, r) in zip(potential["basis"], resolution)
         ),
     )
-    scaled_potential = potential["data"] * np.sqrt(resolution[0] / old.n)
+
+    scaled_potential = potential["data"] * np.sqrt(
+        interpolated_basis.fundamental_n / potential["basis"].n,
+    )
+
     return convert_potential_to_basis(
-        {"basis": basis, "data": scaled_potential},
-        stacked_basis_as_fundamental_momentum_basis(basis),
+        {"basis": interpolated_basis, "data": scaled_potential},
+        stacked_basis_as_fundamental_momentum_basis(interpolated_basis),
     )
 
 
-def get_extended_interpolated_potential(
+def _get_extrapolated_potential(
+    potential: Potential[
+        TupleBasisWithLengthLike[
+            *tuple[FundamentalTransformedPositionBasis[Any, Any], ...]
+        ]
+    ],
+    shape: tuple[_L0Inv, ...],
+) -> Potential[
+    TupleBasisWithLengthLike[
+        *tuple[EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any], ...]
+    ]
+]:
+    extrapolated_basis = TupleBasis(
+        *tuple(
+            EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any](
+                old.delta_x * s,
+                n=old.n,
+                step=s,
+                offset=0,
+            )
+            for (old, s) in zip(potential["basis"], shape)
+        ),
+    )
+
+    scaled_potential = potential["data"] * np.sqrt(
+        extrapolated_basis.fundamental_n / potential["basis"].n,
+    )
+
+    return {"basis": extrapolated_basis, "data": scaled_potential}
+
+
+def get_potential_1d(
     system: PeriodicSystem,
     shape: tuple[_L0Inv, ...],
     resolution: tuple[_L1Inv, ...],
 ) -> Potential[
     TupleBasisWithLengthLike[
-        EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]]
+        *tuple[EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any], ...]
     ]
 ]:
-    interpolated = get_interpolated_potential(system, resolution)
-    old = interpolated["basis"][0]
-    basis = TupleBasis(
-        EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]](
-            old.delta_x * shape[0],
-            n=old.n,
-            step=shape[0],
-            offset=0,
+    potential = _get_fundamental_potential_1d(system)
+    interpolated = _get_interpolated_potential(potential, resolution)
+
+    return _get_extrapolated_potential(interpolated, shape)
+
+
+def _get_fundamental_potential_2d(
+    system: PeriodicSystem,
+) -> Potential[
+    TupleBasis[
+        FundamentalTransformedPositionBasis[Literal[3], Literal[2]],
+        FundamentalTransformedPositionBasis[Literal[3], Literal[2]],
+    ]
+]:
+    # We want the simplest possible potential in 2d with symmetry
+    # (x0,x1) -> (x1,x0)
+    # (x0,x1) -> (-x0,x1)
+    # (x0,x1) -> (x0,-x1)
+    # We therefore occupy G = +-K0, +-K1, +-(K0+K1) equally
+    data = [[0, 1, 1], [1, 1, 0], [1, 0, 1]]
+    vector = 0.5 * system.barrier_energy * np.array(data) / np.sqrt(9)
+    return {
+        "basis": TupleBasis(
+            FundamentalTransformedPositionBasis[Literal[3], Literal[2]](
+                system.lattice_constant * np.array([0, 1]),
+                3,
+            ),
+            FundamentalTransformedPositionBasis[Literal[3], Literal[2]](
+                system.lattice_constant
+                * np.array(
+                    [np.sin(np.pi / 3), np.cos(np.pi / 3)],
+                ),
+                3,
+            ),
         ),
-    )
-    scaled_potential = interpolated["data"] * np.sqrt(basis.fundamental_n / old.n)
-
-    return {"basis": basis, "data": scaled_potential}
+        "data": vector.ravel(),
+    }
 
 
-# 2d
-def get_2d_111_potential(
+def get_potential_2d(
     system: PeriodicSystem,
     shape: tuple[_L0Inv, ...],
-    resolution: tuple[_L0Inv, ...],
+    resolution: tuple[int, ...],
 ) -> Potential[
     TupleBasisWithLengthLike[
-        FundamentalPositionBasis[_L0Inv, Any],
-        FundamentalPositionBasis[_L0Inv, Any],
+        *tuple[EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any], ...]
     ]
 ]:
-    vector_x = np.array(
-        [system.lattice_constant * shape[0], 0],
-    )
-    vector_y = np.array(
-        [
-            system.lattice_constant * shape[1] * np.cos(np.pi / 3),
-            system.lattice_constant * shape[1] * np.sin(np.pi / 3),
-        ],
-    )
-    basis_x = FundamentalPositionBasis(vector_x, resolution[0] * shape[0])
-    basis_y = FundamentalPositionBasis(vector_y, resolution[1] * shape[1])
-    full_basis = TupleBasis(basis_x, basis_y)
-    util = BasisUtil(full_basis)
-    x_points = util.x_points_stacked
-
-    zeta = 4 * np.pi / (np.sqrt(3) * system.lattice_constant)
-    g = np.array(
-        [
-            np.array([zeta, 0]),
-            np.array([zeta * np.cos(np.pi / 3), zeta * np.sin(np.pi / 3)]),
-            np.array([-zeta * np.cos(np.pi / 3), zeta * np.sin(np.pi / 3)]),
-        ],
-    )
-    V_r = []
-    for r in x_points.T:
-        V_i = 0
-        for g_i in g:
-            V_i += system.barrier_energy * np.cos(np.inner(g_i, r))
-        V_r.append(V_i)
-    V_r = np.array(V_r)
-    return {"basis": full_basis, "data": V_r}
+    potential = _get_fundamental_potential_2d(system)
+    interpolated = _get_interpolated_potential(potential, resolution)
+    return _get_extrapolated_potential(interpolated, shape)
 
 
 # def get_extended_2d_111_potential(system: PeriodicSystem, config: SimulationConfig):
@@ -252,9 +284,9 @@ def _get_full_hamiltonian(
     bloch_fraction = np.array([0]) if bloch_fraction is None else bloch_fraction
 
     if len(shape) == 1:
-        potential = get_extended_interpolated_potential(system, shape, resolution)
+        potential = get_potential_1d(system, shape, resolution)
     if len(shape) == 2:
-        potential = get_2d_111_potential(system, shape, resolution)
+        potential = get_potential_2d(system, shape, resolution)
     converted = convert_potential_to_basis(
         potential,
         stacked_basis_as_fundamental_position_basis(potential["basis"]),
