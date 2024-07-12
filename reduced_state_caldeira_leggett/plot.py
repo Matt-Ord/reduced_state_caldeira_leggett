@@ -42,7 +42,6 @@ from reduced_state_caldeira_leggett.dynamics import (
 from reduced_state_caldeira_leggett.system import (
     PeriodicSystem,
     SimulationConfig,
-    get_2d_111_potential,
     get_hamiltonian,
     get_noise_kernel,
     get_noise_operators,
@@ -248,9 +247,6 @@ def plot_2d_111_potential(
 
     fig.show()
 
-    potential = get_2d_111_potential(system, config.shape, config.resolution)
-    fig, _, _ = plot_potential_2d_x(potential)
-
     fig.show()
     input()
 
@@ -263,7 +259,7 @@ def plot_2d_111_state_against_t(
     step: int,
     dt_ratio: float = 500,
 ) -> None:
-    potential = get_2d_111_potential(system, config.shape, config.resolution)
+    potential = get_potential_2d(system, config.shape, config.resolution)
     fig, ax, _ = plot_potential_2d_x(potential)
     states = get_stochastic_evolution(system, config, n=n, step=step, dt_ratio=dt_ratio)
     _fig, _, _animation_ = animate_state_3d_x(states, ax=ax.twinx())
