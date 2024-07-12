@@ -20,7 +20,6 @@ from surface_potential_analysis.basis.stacked_basis import (
     TupleBasisLike,
     TupleBasisWithLengthLike,
 )
-from surface_potential_analysis.basis.util import BasisUtil
 from surface_potential_analysis.hamiltonian_builder.momentum_basis import (
     total_surface_hamiltonian,
 )
@@ -255,62 +254,18 @@ def get_potential_2d(
         *tuple[EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any], ...]
     ]
 ]:
-    potential = _get_fundamental_potential_2d(system)
-    interpolated = _get_interpolated_potential(potential, resolution)
-    return _get_extrapolated_potential(interpolated, shape)
-
-
-def get_2d_111_potential(
-    system: PeriodicSystem,
-    shape: tuple[int, int],
-    resolution: tuple[int, int],
-) -> Potential[
-    TupleBasisWithLengthLike[
-        FundamentalPositionBasis[int, Any],
-        FundamentalPositionBasis[int, Any],
-    ]
-]:
     """Generate potential for 2D periodic system, for 111 plane of FCC lattice.
 
     Expression for potential from:
-
     [1] D. J. Ward
         A study of spin-echo lineshapes in helium atom scattering from adsorbates.
-
     [2]S. P. Rittmeyer et al
         Energy Dissipation during Diffusion at Metal Surfaces:
         Disentangling the Role of Phonons vs Electron-Hole Pairs.
-
     """
-    vector_x = np.array(
-        [system.lattice_constant * shape[0], 0],
-    )
-    vector_y = np.array(
-        [
-            system.lattice_constant * shape[1] * np.cos(np.pi / 3),
-            system.lattice_constant * shape[1] * np.sin(np.pi / 3),
-        ],
-    )
-    basis_x = FundamentalPositionBasis(vector_x, resolution[0] * shape[0])
-    basis_y = FundamentalPositionBasis(vector_y, resolution[1] * shape[1])
-    full_basis = TupleBasis(basis_x, basis_y)
-    util = BasisUtil(full_basis)
-    x_points = util.x_points_stacked
-
-    zeta = 4 * np.pi / (np.sqrt(3) * system.lattice_constant)
-    g = np.array(
-        [
-            np.array([zeta, 0]),
-            np.array([zeta * np.cos(np.pi / 3), zeta * np.sin(np.pi / 3)]),
-            np.array([-zeta * np.cos(np.pi / 3), zeta * np.sin(np.pi / 3)]),
-        ],
-    )
-    potential = []
-    for r in x_points.T:
-        V_i = system.barrier_energy * np.cos(np.sum(np.multiply(g, r)))
-        potential.append(V_i)
-    potential = np.array(potential)
-    return {"basis": full_basis, "data": potential}
+    potential = _get_fundamental_potential_2d(system)
+    interpolated = _get_interpolated_potential(potential, resolution)
+    return _get_extrapolated_potential(interpolated, shape)
 
 
 def _get_full_hamiltonian(

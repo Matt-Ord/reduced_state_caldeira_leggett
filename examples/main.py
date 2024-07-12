@@ -1,5 +1,4 @@
 from reduced_state_caldeira_leggett.plot import (
-    plot_2d_111_potential,
     plot_basis_states,
     plot_initial_state,
     plot_state_against_t,
@@ -18,7 +17,6 @@ if __name__ == "__main__":
         type="bloch",
         temperature=150,
     )
-    plot_2d_111_potential(system, config)
 
     plot_basis_states(system, config)
     plot_state_against_t(system, config, n=1000, step=500)
