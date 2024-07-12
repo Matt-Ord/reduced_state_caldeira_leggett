@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 import numpy as np
 from surface_potential_analysis.basis.basis import (
@@ -71,7 +71,6 @@ if TYPE_CHECKING:
     )
 
 _L0Inv = TypeVar("_L0Inv", bound=int)
-_L1Inv = TypeVar("_L1Inv", bound=int)
 
 
 @dataclass
@@ -118,14 +117,6 @@ FREE_LITHIUM_SYSTEM = PeriodicSystem(
 )
 
 
-FREE_LITHIUM_SYSTEM = PeriodicSystem(
-    id="LiFree",
-    barrier_energy=0,
-    lattice_constant=3.615e-10,
-    mass=1.152414898e-26,
-    gamma=1.2e12,
-)
-
 SODIUM_COPPER_SYSTEM = PeriodicSystem(
     id="NaCu",
     barrier_energy=8.8e-21,
@@ -169,18 +160,18 @@ def _get_interpolated_potential(
 
 def get_extended_interpolated_potential(
     system: PeriodicSystem,
-    shape: tuple[_L0Inv],
-    resolution: tuple[_L1Inv],
+    shape: tuple[int],
+    resolution: tuple[int],
 ) -> Potential[
     TupleBasisWithLengthLike[
-        EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]]
+        EvenlySpacedTransformedPositionBasis[int, int, Literal[0], Literal[1]]
     ]
 ]:
     """Generate potential for periodic 1D system."""
     interpolated = _get_interpolated_potential(system, resolution)
     old = interpolated["basis"][0]
     basis = TupleBasis(
-        EvenlySpacedTransformedPositionBasis[_L1Inv, _L0Inv, Literal[0], Literal[1]](
+        EvenlySpacedTransformedPositionBasis[int, int, Literal[0], Literal[1]](
             old.delta_x * shape[0],
             n=old.n,
             step=shape[0],
@@ -192,11 +183,10 @@ def get_extended_interpolated_potential(
     return {"basis": basis, "data": scaled_potential}
 
 
-# 2d
 def get_2d_111_potential(
     system: PeriodicSystem,
-    shape: tuple[int, ...],
-    resolution: tuple[_L0Inv, _L1Inv],
+    shape: tuple[int, int],
+    resolution: tuple[int, int],
 ) -> Potential[
     TupleBasisWithLengthLike[
         FundamentalPositionBasis[int, Any],
@@ -207,9 +197,12 @@ def get_2d_111_potential(
 
     Expression for potential from:
 
-    [1]D. J. Ward, A study of spin-echo lineshapes in helium atom scattering from adsorbates.
+    [1] D. J. Ward
+        A study of spin-echo lineshapes in helium atom scattering from adsorbates.
 
-    [2]S. P. Rittmeyer et al, Energy Dissipation during Diffusion at Metal Surfaces: Disentangling the Role of Phonons vs Electron-Hole Pairs.
+    [2]S. P. Rittmeyer et al
+        Energy Dissipation during Diffusion at Metal Surfaces:
+        Disentangling the Role of Phonons vs Electron-Hole Pairs.
 
     """
     vector_x = np.array(
@@ -250,17 +243,26 @@ def _get_full_hamiltonian(
     *,
     bloch_fraction: np.ndarray[tuple[Literal[1]], np.dtype[np.float64]] | None = None,
 ) -> SingleBasisOperator[
-    TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]],
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[int, int], ...]],
 ]:
     bloch_fraction = np.array([0]) if bloch_fraction is None else bloch_fraction
 
     match len(shape):
         case 1:
-            potential = get_extended_interpolated_potential(system, shape, resolution)
+            potential = get_extended_interpolated_potential(
+                system,
+                cast(tuple[int], shape),
+                cast(tuple[int], resolution),
+            )
         case 2:
-            potential = get_2d_111_potential(system, shape, resolution)
+            potential = get_2d_111_potential(
+                system,
+                cast(tuple[int, int], shape),
+                cast(tuple[int, int], resolution),
+            )
         case _:
-            potential = ...
+            msg = "Currently only support 1 and 2D potentials"
+            raise ValueError(msg)
 
     converted = convert_potential_to_basis(
         potential,
@@ -275,12 +277,12 @@ def get_wavepacket(
 ) -> BlochWavefunctionListWithEigenvaluesList[
     EvenlySpacedBasis[int, int, int],
     TupleBasisLike[*tuple[FundamentalBasis[int], ...]],
-    TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]],
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[int, int], ...]],
 ]:
     def hamiltonian_generator(
         bloch_fraction: np.ndarray[tuple[Literal[1]], np.dtype[np.float64]],
     ) -> SingleBasisOperator[
-        TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]]
+        TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[int, int], ...]]
     ]:
         return _get_full_hamiltonian(
             system,
@@ -299,11 +301,11 @@ def get_wavepacket(
 def get_localisation_operator(
     wavefunctions: BlochWavefunctionListWithEigenvaluesList[
         EvenlySpacedBasis[int, int, int],
-        TupleBasisLike[FundamentalBasis[int]],
-        TupleBasisWithLengthLike[FundamentalPositionBasis[int, Literal[1]]],
+        TupleBasisLike[*tuple[FundamentalBasis[int], ...]],
+        TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[int, int], ...]],
     ],
 ) -> LocalizationOperator[
-    TupleBasisLike[FundamentalBasis[int]],
+    TupleBasisLike[*tuple[FundamentalBasis[int], ...]],
     FundamentalBasis[int],
     EvenlySpacedBasis[int, int, int],
 ]:

@@ -245,19 +245,3 @@ def plot_2d_111_potential(
     fig, _, _ = plot_potential_2d_x(potential)
     fig.show()
     input()
-
-
-# def plot_2d_111_state_against_t(
-#     system: PeriodicSystem,
-#     config: SimulationConfig,
-#     *,
-#     n: int,
-#     step: int,
-#     dt_ratio: float = 500,
-# ) -> None:
-#     potential = get_2d_111_potential(system, config.shape, config.resolution)
-#     fig, ax, _ = plot_potential_2d_x(potential)
-#     states = get_stochastic_evolution(system, config, n=n, step=step, dt_ratio=dt_ratio)
-#     _fig, _, _animation_ = animate_state_3d_x(states, ax=ax.twinx())
-#     fig.show()
-#     input()
