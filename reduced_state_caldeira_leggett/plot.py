@@ -6,6 +6,7 @@ from surface_potential_analysis.kernel.kernel import (
     as_diagonal_kernel_from_full,
     as_diagonal_kernel_from_isotropic,
     as_full_kernel_from_diagonal,
+    get_diagonal_kernel_from_diagonal_operators,
     get_full_kernel_from_operators,
 )
 from surface_potential_analysis.kernel.plot import (
@@ -14,15 +15,14 @@ from surface_potential_analysis.kernel.plot import (
     plot_isotropic_noise_kernel_1d_x,
     plot_kernel_2d,
 )
-from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.operator.operator_list import (
+    select_diagonal_operator,
     select_operator,
-    select_operator_diagonal,
 )
 from surface_potential_analysis.operator.plot import (
+    plot_diagonal_operator_along_diagonal,
     plot_eigenstate_occupations,
     plot_operator_2d,
-    plot_operator_along_diagonal,
 )
 from surface_potential_analysis.potential.plot import (
     plot_potential_1d_x,
@@ -252,8 +252,11 @@ def plot_noise_operators(
 ) -> None:
     """Plot the noise operators generated."""
     operators = get_noise_operators(system, config)
-    op = select_operator_diagonal(operators, idx=1)
-    fig1, ax1, _ = plot_operator_along_diagonal(as_operator(op), measure="real")
+    operator = select_diagonal_operator(operators, idx=1)
+    fig1, ax1, _ = plot_diagonal_operator_along_diagonal(
+        operator,
+        measure="real",
+    )
     ax1.set_title("fitted noise operator")
     fig1.show()
     input()
@@ -277,8 +280,16 @@ def plot_noise_kernel(
     line2.set_label("fitted noise, no temperature correction")
 
     ax.set_title(
-        f"noise kernel, fit method = {config.fit_method}, n = {config.n_polynomial}, temperature = {config.temperature}",
+        f"noise kernel, fit method = {config.fit_method}, n = {config.n_polynomial}, "
+        f"temperature = {config.temperature}",
     )
     ax.legend()
     fig.show()
+
+    operators = get_noise_operators(system, config)
+    diagonal = get_diagonal_kernel_from_diagonal_operators(operators)
+    fig, ax, _ = plot_diagonal_kernel_2d(diagonal)
+    ax.set_title("Full noise kernel")
+    fig.show()
+
     input()

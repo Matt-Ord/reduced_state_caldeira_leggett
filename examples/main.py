@@ -14,8 +14,8 @@ if __name__ == "__main__":
         n_bands=3,
         type="bloch",
         temperature=150,
-        fit_method="poly fit",
-        n_polynomial=5,
+        fit_method="fft",
+        n_polynomial=3,
     )
 
     plot_noise_kernel(system, config)

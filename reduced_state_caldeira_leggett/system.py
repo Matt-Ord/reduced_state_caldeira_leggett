@@ -7,6 +7,7 @@ import numpy as np
 from surface_potential_analysis.basis.basis import (
     FundamentalBasis,
     FundamentalPositionBasis,
+    FundamentalTransformedBasis,
     FundamentalTransformedPositionBasis,
     FundamentalTransformedPositionBasis1d,
     TransformedPositionBasis,
@@ -27,9 +28,6 @@ from surface_potential_analysis.kernel.build import (
     get_temperature_corrected_diagonal_noise_operators,
     truncate_diagonal_noise_operator_list,
 )
-from surface_potential_analysis.kernel.conversion import (
-    convert_diagonal_noise_operator_list_to_basis,
-)
 from surface_potential_analysis.kernel.gaussian import (
     get_effective_gaussian_parameters,
     get_gaussian_isotropic_noise_kernel,
@@ -38,7 +36,7 @@ from surface_potential_analysis.kernel.gaussian import (
 from surface_potential_analysis.kernel.kernel import (
     IsotropicNoiseKernel,
     as_diagonal_kernel_from_isotropic,
-    get_isotropic_kernel_from_operators,
+    get_isotropic_kernel_from_diagonal_operators,
 )
 from surface_potential_analysis.kernel.solve import (
     get_noise_operators_diagonal_eigenvalue,
@@ -48,7 +46,6 @@ from surface_potential_analysis.kernel.solve import (
 from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.potential.conversion import (
     convert_potential_to_basis,
-    convert_potential_to_position_basis,
 )
 from surface_potential_analysis.stacked_basis.build import (
     fundamental_transformed_stacked_basis_from_shape,
@@ -105,6 +102,14 @@ class PeriodicSystem:
         return 2 * self.mass * self.gamma
 
 
+FitMethod = Literal[
+    "fitted polynomial",
+    "eigenvalue",
+    "fft",
+    "explicit polynomial",
+]
+
+
 @dataclass
 class SimulationConfig:
     """Configure the detail of the simulation."""
@@ -114,10 +119,8 @@ class SimulationConfig:
     n_bands: int
     type: Literal["bloch", "wannier"]
     temperature: float
-    fit_method: Literal["poly fit", "eigenvalue", "fft", "explicit polynomial"] = "fft"
-    n_polynomial: int | None = (
-        5  # from simulation see n=5 gives good fit, set default to 5 first
-    )
+    fit_method: FitMethod = "fft"
+    n_polynomial: int | None = None
 
 
 HYDROGEN_NICKEL_SYSTEM = PeriodicSystem(
@@ -288,36 +291,46 @@ def get_potential_2d(
     return _get_extrapolated_potential(interpolated, shape)
 
 
-def get_potential(
+def _get_potential(
     system: PeriodicSystem,
-    config: SimulationConfig,
+    shape: tuple[int, ...],
+    resolution: tuple[int, ...],
 ) -> Potential[
     TupleBasisWithLengthLike[
         *tuple[EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any], ...]
     ]
 ]:
-    match len(config.shape):
+    match len(shape):
         case 1:
-            potential = get_potential_1d(
+            return get_potential_1d(
                 system,
-                cast(tuple[int], config.shape),
-                cast(tuple[int], config.resolution),
+                cast(tuple[int], shape),
+                cast(tuple[int], resolution),
             )
         case 2:
-            potential = get_potential_2d(
+            return get_potential_2d(
                 system,
-                cast(tuple[int, int], config.shape),
-                cast(tuple[int, int], config.resolution),
+                cast(tuple[int, int], shape),
+                cast(tuple[int, int], resolution),
             )
         case _:
             msg = "Currently only support 1 and 2D potentials"
             raise ValueError(msg)
-    return potential
 
 
-def _get_full_hamiltonian(
+def _get_basis(
     system: PeriodicSystem,
     config: SimulationConfig,
+) -> TupleBasisWithLengthLike[
+    *tuple[EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any], ...]
+]:
+    return _get_potential(system, config.shape, config.resolution)["basis"]
+
+
+def _get_bloch_hamiltonian(
+    system: PeriodicSystem,
+    shape: tuple[int, ...],
+    resolution: tuple[int, ...],
     *,
     bloch_fraction: np.ndarray[tuple[Literal[1]], np.dtype[np.float64]] | None = None,
 ) -> SingleBasisOperator[
@@ -325,7 +338,7 @@ def _get_full_hamiltonian(
 ]:
     bloch_fraction = np.array([0]) if bloch_fraction is None else bloch_fraction
 
-    potential = get_potential(system, config)
+    potential = _get_potential(system, shape, resolution)
 
     converted = convert_potential_to_basis(
         potential,
@@ -339,7 +352,7 @@ def get_wavepacket(
     config: SimulationConfig,
 ) -> BlochWavefunctionListWithEigenvaluesList[
     EvenlySpacedBasis[int, int, int],
-    TupleBasisLike[*tuple[FundamentalBasis[int], ...]],
+    TupleBasisLike[*tuple[FundamentalTransformedBasis[int], ...]],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[int, int], ...]],
 ]:
     def hamiltonian_generator(
@@ -347,7 +360,7 @@ def get_wavepacket(
     ) -> SingleBasisOperator[
         TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[int, int], ...]]
     ]:
-        return _get_full_hamiltonian(
+        return _get_bloch_hamiltonian(
             system,
             tuple(1 for _ in config.shape),
             config.resolution,
@@ -364,11 +377,11 @@ def get_wavepacket(
 def get_localisation_operator(
     wavefunctions: BlochWavefunctionListWithEigenvaluesList[
         EvenlySpacedBasis[int, int, int],
-        TupleBasisLike[*tuple[FundamentalBasis[int], ...]],
+        TupleBasisLike[*tuple[FundamentalTransformedBasis[int], ...]],
         TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[int, int], ...]],
     ],
 ) -> LocalizationOperator[
-    TupleBasisLike[*tuple[FundamentalBasis[int], ...]],
+    TupleBasisLike[*tuple[FundamentalTransformedBasis[int], ...]],
     FundamentalBasis[int],
     EvenlySpacedBasis[int, int, int],
 ]:
@@ -397,6 +410,78 @@ def get_hamiltonian(
     return get_full_wannier_hamiltonian(wavefunctions, operator)
 
 
+def get_true_noise_kernel(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> IsotropicNoiseKernel[
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
+]:
+    basis = stacked_basis_as_fundamental_position_basis(_get_basis(system, config))
+    a, lambda_ = get_effective_gaussian_parameters(
+        basis,
+        system.eta,
+        config.temperature,
+    )
+    return get_gaussian_isotropic_noise_kernel(basis, a, lambda_)
+
+
+def get_noise_operators(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> SingleBasisDiagonalNoiseOperatorList[
+    FundamentalBasis[int],
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
+]:
+    kernel = get_true_noise_kernel(system, config)
+    match config.fit_method:
+        case "fitted polynomial":
+            return get_noise_operators_real_isotropic_stacked_taylor_expansion(
+                kernel,
+                n=config.n_polynomial,
+            )
+        case "explicit polynomial":
+            a, lambda_ = get_effective_gaussian_parameters(
+                kernel["basis"],
+                system.eta,
+                config.temperature,
+            )
+            return get_gaussian_operators_explicit_taylor(
+                kernel["basis"],
+                a,
+                lambda_,
+                n_terms=config.n_polynomial,
+            )
+        case "fft":
+            operators = get_noise_operators_real_isotropic_stacked_fft(
+                kernel,
+            )
+            if config.n_polynomial is None:
+                return {
+                    "basis": TupleBasis(
+                        FundamentalBasis(operators["basis"][0].n),
+                        operators["basis"][1],
+                    ),
+                    "data": operators["data"],
+                    "eigenvalue": operators["eigenvalue"],
+                }
+            return truncate_diagonal_noise_operator_list(
+                operators,
+                range(2 * config.n_polynomial + 1),
+            )
+        case "eigenvalue":
+            operators = get_noise_operators_diagonal_eigenvalue(
+                as_diagonal_kernel_from_isotropic(kernel),
+            )
+
+            if config.n_polynomial is None:
+                return operators
+            return truncate_diagonal_noise_operator_list(
+                operators,
+                range(2 * config.n_polynomial + 1),
+            )
+    return operators
+
+
 def get_noise_kernel(
     system: PeriodicSystem,
     config: SimulationConfig,
@@ -404,88 +489,14 @@ def get_noise_kernel(
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
 ]:
     operators = get_noise_operators(system, config)
-    basis = convert_potential_to_position_basis(get_potential(system, config))["basis"]
-    converted = convert_diagonal_noise_operator_list_to_basis(
-        operators,
-        TupleBasis(basis, basis),
-    )
-    return get_isotropic_kernel_from_operators(converted)
-
-
-def get_true_noise_kernel(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> IsotropicNoiseKernel[
-    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
-]:
-    basis = convert_potential_to_position_basis(get_potential(system, config))["basis"]
-    a, lambda_ = get_effective_gaussian_parameters(
-        basis,
-        system.eta,
-        config.temperature,
-    )
-    kernel = get_gaussian_isotropic_noise_kernel(basis, a, lambda_)
-    operators = get_noise_operators_real_isotropic_stacked_fft(
-        kernel,
-    )
-    converted = convert_diagonal_noise_operator_list_to_basis(
-        operators,
-        TupleBasis(basis, basis),
-    )
-    return get_isotropic_kernel_from_operators(converted)
-
-
-def get_noise_operators(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> SingleBasisDiagonalNoiseOperatorList[
-    TupleBasis[*tuple[FundamentalBasis[int], ...]],
-    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
-]:
-    basis = convert_potential_to_position_basis(get_potential(system, config))["basis"]
-    a, lambda_ = get_effective_gaussian_parameters(
-        basis,
-        system.eta,
-        config.temperature,
-    )
-    kernel = get_gaussian_isotropic_noise_kernel(basis, a, lambda_)
-    match config.fit_method:
-        case "poly fit":
-            operators = get_noise_operators_real_isotropic_stacked_taylor_expansion(
-                kernel,
-                n=config.n_polynomial,
-            )
-        case "fft":
-            operators = get_noise_operators_real_isotropic_stacked_fft(
-                kernel,
-            )
-            operators = truncate_diagonal_noise_operator_list(
-                operators,
-                range(config.n_polynomial),
-            )
-        case "eigenvalue":
-            operators = get_noise_operators_diagonal_eigenvalue(
-                as_diagonal_kernel_from_isotropic(kernel),
-            )
-            operators = truncate_diagonal_noise_operator_list(
-                operators,
-                range(config.n_polynomial),
-            )
-        case "explicit polynomial":
-            operators = get_gaussian_operators_explicit_taylor(
-                basis,
-                a,
-                lambda_,
-                n_terms=config.n_polynomial,
-            )
-    return operators
+    return get_isotropic_kernel_from_diagonal_operators(operators)
 
 
 def get_temperature_corrected_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> SingleBasisNoiseOperatorList[
-    TupleBasis[*tuple[FundamentalBasis[int], ...]],
+    FundamentalBasis[int],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
     operators = get_noise_operators(system, config)
