@@ -2,20 +2,27 @@ from __future__ import annotations
 
 import numpy as np
 from matplotlib import pyplot as plt
-from surface_potential_analysis.kernel.kernel import as_diagonal_kernel, as_noise_kernel
 from surface_potential_analysis.kernel.kernel import (
-    get_noise_kernel as get_noise_kernel_generic,
+    as_diagonal_kernel_from_full,
+    as_diagonal_kernel_from_isotropic,
+    as_full_kernel_from_diagonal,
+    get_diagonal_kernel_from_diagonal_operators,
+    get_full_kernel_from_operators,
 )
 from surface_potential_analysis.kernel.plot import (
-    plot_diagonal_kernel,
-    plot_kernel_truncation_error,
+    plot_diagonal_kernel_2d,
+    plot_diagonal_kernel_truncation_error,
+    plot_isotropic_noise_kernel_1d_x,
+    plot_kernel_2d,
 )
-from surface_potential_analysis.kernel.plot import plot_kernel as plot_kernel_generic
-from surface_potential_analysis.operator.operator_list import select_operator
+from surface_potential_analysis.operator.operator_list import (
+    select_diagonal_operator,
+    select_operator,
+)
 from surface_potential_analysis.operator.plot import (
+    plot_diagonal_operator_along_diagonal,
     plot_eigenstate_occupations,
     plot_operator_2d,
-    plot_operator_along_diagonal,
 )
 from surface_potential_analysis.potential.plot import (
     plot_potential_1d_x,
@@ -26,7 +33,7 @@ from surface_potential_analysis.state_vector.eigenstate_calculation import (
 )
 from surface_potential_analysis.state_vector.plot import (
     animate_state_over_list_1d_x,
-    plot_average_band_occupation,
+    plot_average_eigenstate_occupation,
     plot_state_1d_k,
     plot_state_1d_x,
 )
@@ -46,6 +53,8 @@ from reduced_state_caldeira_leggett.system import (
     get_noise_operators,
     get_potential_1d,
     get_potential_2d,
+    get_temperature_corrected_noise_operators,
+    get_true_noise_kernel,
 )
 
 
@@ -121,25 +130,26 @@ def plot_kernel(
     config: SimulationConfig,
 ) -> None:
     kernel = get_noise_kernel(system, config)
-    diagonal = as_diagonal_kernel(kernel)
+    diagonal = as_diagonal_kernel_from_isotropic(kernel)
 
-    fig, _, _ = plot_diagonal_kernel(diagonal)
+    fig, _, _ = plot_diagonal_kernel_2d(diagonal)
+    fig.show()
+    input()
+
+    fig, _, _ = plot_kernel_2d(as_full_kernel_from_diagonal(diagonal))
     fig.show()
 
-    fig, _, _ = plot_kernel_generic(as_noise_kernel(diagonal))
+    fig, _, _ = plot_diagonal_kernel_truncation_error(diagonal)
     fig.show()
 
-    fig, _ = plot_kernel_truncation_error(kernel)
+    corrected_operators = get_temperature_corrected_noise_operators(system, config)
+    kernel_full = get_full_kernel_from_operators(corrected_operators)
+
+    fig, _, _ = plot_kernel_2d(kernel_full)
     fig.show()
 
-    corrected_operators = get_noise_operators(system, config)
-    kernel_full = get_noise_kernel_generic(corrected_operators)
-
-    fig, _, _ = plot_kernel_generic(kernel_full)
-    fig.show()
-
-    diagonal = as_diagonal_kernel(kernel_full)
-    fig, _, _ = plot_diagonal_kernel(diagonal)
+    diagonal = as_diagonal_kernel_from_full(kernel_full)
+    fig, _, _ = plot_diagonal_kernel_2d(diagonal)
     fig.show()
 
     input()
@@ -205,7 +215,7 @@ def plot_stochastic_occupation(
     )
     hamiltonian = get_hamiltonian(system, config)
 
-    fig2, ax2, line = plot_average_band_occupation(hamiltonian, states)
+    fig2, ax2, line = plot_average_eigenstate_occupation(hamiltonian, states)
 
     for ax in [ax2]:
         _, _, line = plot_eigenstate_occupations(hamiltonian, 150, ax=ax)
@@ -226,25 +236,61 @@ def plot_initial_state(system: PeriodicSystem, config: SimulationConfig) -> None
     input()
 
 
-def plot_noise_operator(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> None:
-    operator = select_operator(get_noise_operators(system, config), 0)
-    fig, _ax, _ = plot_operator_along_diagonal(operator)
-
-    fig.show()
-    input()
-
-
 def plot_2d_111_potential(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> None:
     potential = get_potential_2d(system, config.shape, config.resolution)
     fig, _, _ = plot_potential_2d_x(potential)
+    fig.show()
+    input()
 
+
+def plot_noise_operators(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> None:
+    """Plot the noise operators generated."""
+    operators = get_noise_operators(system, config)
+    operator = select_diagonal_operator(operators, idx=1)
+    fig1, ax1, _ = plot_diagonal_operator_along_diagonal(
+        operator,
+        measure="real",
+    )
+    ax1.set_title("fitted noise operator")
+    fig1.show()
+    input()
+
+
+def plot_noise_kernel(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> None:
+    """Plot 1d isotropic noise kernel.
+
+    True kernel and the fitted kernel compared.
+    """
+    kernel_real = get_true_noise_kernel(system, config)
+    fig, ax, line1 = plot_isotropic_noise_kernel_1d_x(kernel_real)
+    line1.set_label("actual noise")
     fig.show()
 
+    kernel_isotropic_fitted = get_noise_kernel(system, config)
+    fig, _, line2 = plot_isotropic_noise_kernel_1d_x(kernel_isotropic_fitted, ax=ax)
+    line2.set_linestyle("--")
+    line2.set_label("fitted noise")
+
+    ax.set_title(
+        f"noise kernel, fit method = {config.fit_method}, n = {config.n_polynomial}, "
+        f"temperature = {config.temperature}",
+    )
+    ax.legend()
     fig.show()
+
+    operators = get_noise_operators(system, config)
+    diagonal = get_diagonal_kernel_from_diagonal_operators(operators)
+    fig, ax, _ = plot_diagonal_kernel_2d(diagonal)
+    ax.set_title("Full noise kernel")
+    fig.show()
+
     input()
