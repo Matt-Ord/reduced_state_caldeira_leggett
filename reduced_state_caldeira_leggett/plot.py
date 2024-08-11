@@ -272,12 +272,13 @@ def plot_noise_kernel(
     """
     kernel_real = get_true_noise_kernel(system, config)
     fig, ax, line1 = plot_isotropic_noise_kernel_1d_x(kernel_real)
-    line1.set_label("true noise, no temperature correction")
+    line1.set_label("actual noise")
     fig.show()
 
     kernel_isotropic_fitted = get_noise_kernel(system, config)
     fig, _, line2 = plot_isotropic_noise_kernel_1d_x(kernel_isotropic_fitted, ax=ax)
-    line2.set_label("fitted noise, no temperature correction")
+    line2.set_linestyle("--")
+    line2.set_label("fitted noise")
 
     ax.set_title(
         f"noise kernel, fit method = {config.fit_method}, n = {config.n_polynomial}, "
