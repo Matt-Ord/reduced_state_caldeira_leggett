@@ -314,8 +314,65 @@ def plot_kernel_fit_runtime(
     plt.xlabel("number of unit cell")
     plt.ylabel("runtime/seconds")
     plt.title(
-        f"Runtime for fit method = {config.fit_method}, n = {config.n_polynomial}, temperature = {config.temperature}, number of run = {n_run}",
+        f"Runtime for fit method = {config.fit_method}, n = {config.n_polynomial},\n"
+        f"temperature = {config.temperature}, number of run = {n_run}",
     )
+    plt.show()
+
+    input()
+
+
+# to see which part in poly fit takes the longest time
+def plot_poly_fit_runtime(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+    size: np.ndarray[tuple[int, int], np.dtype[Any]],
+    n_run: int,
+) -> None:
+    config.fit_method = "poly fit"
+    runtime_fit = []
+    runtime_get_op = []
+    error_fit = []
+    error_get_op = []
+    shape = []
+    for s in size:
+        config.shape = s
+        times_fit = []
+        times_get_op = []
+        for _ in range(n_run):
+            times = get_operators_fit_time(system, config)
+            times_fit.append(times[0][0])
+            times_get_op.append(times[0][1])
+        avg_time_fit = np.mean(np.array(times_fit)).item()
+        runtime_fit.append(avg_time_fit)
+        time_err_fit = np.std(np.array(times_fit)).item() / np.sqrt(n_run)
+        error_fit.append(time_err_fit)
+
+        avg_time_get_op = np.mean(np.array(times_get_op)).item()
+        runtime_get_op.append(avg_time_get_op)
+        time_err_get_op = np.std(np.array(times_get_op)).item() / np.sqrt(n_run)
+        error_get_op.append(time_err_get_op)
+        shape.append(s[0])
+
+    plt.errorbar(
+        x=np.array(shape),
+        y=np.array(runtime_fit),
+        yerr=np.array(error_fit),
+        label="numpy fit",
+    )
+    plt.errorbar(
+        x=np.array(shape),
+        y=np.array(runtime_get_op),
+        yerr=np.array(error_get_op),
+        label="get operators",
+    )
+    plt.xlabel("number of unit cell")
+    plt.ylabel("runtime/seconds")
+    plt.title(
+        f"Poly fit, n = {config.n_polynomial},\n"
+        f"temperature = {config.temperature}, number of run = {n_run}",
+    )
+    plt.legend()
     plt.show()
 
     input()
@@ -358,7 +415,10 @@ def plot_isotropic_kernel_percentage_error(
     line1.set_label(
         f"fit method = {base_config.fit_method}, power of polynomial terms included = {base_config.n_polynomial}",
     )
-    ax.set_title("comparison of noise kernel percentage error")
+    ax.set_title(
+        "comparison of noise kernel percentage error,\n"
+        f"number of states = {config.shape[0]*config.resolution[0]}",
+    )
     ax.set_ylabel("Percentage Error, %")
     line.set_label(
         f"fit method = {config.fit_method}, power of polynomial terms included = {config.n_polynomial}",
