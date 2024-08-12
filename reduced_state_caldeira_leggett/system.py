@@ -457,12 +457,13 @@ def get_noise_operators(
                 n=config.n_polynomial,
             )
         case "fft":
-            operators = get_noise_operators_real_isotropic_fft(
-                kernel,
-            )
-            operators = truncate_diagonal_noise_operator_list(
-                operators,
-                range(config.n_polynomial),
+            (
+                operators := get_noise_operators_real_isotropic_fft(kernel)
+            ) if config.n_polynomial is None else (
+                operators := truncate_diagonal_noise_operator_list(
+                    get_noise_operators_real_isotropic_fft(kernel),
+                    range(config.n_polynomial),
+                )
             )
         case "eigenvalue":
             operators = get_noise_operators_diagonal_eigenvalue(

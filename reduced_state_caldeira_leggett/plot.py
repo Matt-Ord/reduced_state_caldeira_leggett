@@ -325,8 +325,7 @@ def plot_isotropic_kernel_percentage_error(
     system: PeriodicSystem,
     config: SimulationConfig,
     *,
-    to_compare: bool = False,
-    config1: SimulationConfig | None = None,
+    base_config: SimulationConfig | None = None,
 ) -> None:
     true_kernel = get_true_noise_kernel(system, config)
     operators = get_noise_operators(system, config)
@@ -337,18 +336,28 @@ def plot_isotropic_kernel_percentage_error(
     )
     fig, ax, line = plot_isotropic_kernel_error(true_kernel, fitted_kernel)
 
+    if base_config is None:
+        base_config = SimulationConfig(
+            shape=config.shape,
+            resolution=config.resolution,
+            n_bands=config.n_bands,
+            type=config.type,
+            temperature=config.temperature,
+            fit_method="fft",
+            n_polynomial=None,
+        )
+
     # to compare the errors between different methods directly
-    if to_compare:
-        operators1 = get_noise_operators(system, config1)
-        fitted_kernel1 = get_diagonal_kernel_from_diagonal_operators(operators1)
-        fitted_kernel1 = as_isotropic_kernel_from_diagonal(
-            fitted_kernel1,
-            assert_isotropic=False,
-        )
-        fig, _, line1 = plot_isotropic_kernel_error(true_kernel, fitted_kernel1, ax=ax)
-        line1.set_label(
-            f"fit method = {config1.fit_method}, power of polynomial terms included = {config1.n_polynomial}",
-        )
+    base_operators = get_noise_operators(system, base_config)
+    base_kernel = get_diagonal_kernel_from_diagonal_operators(base_operators)
+    base_kernel = as_isotropic_kernel_from_diagonal(
+        base_kernel,
+        assert_isotropic=False,
+    )
+    fig, _, line1 = plot_isotropic_kernel_error(true_kernel, base_kernel, ax=ax)
+    line1.set_label(
+        f"fit method = {base_config.fit_method}, power of polynomial terms included = {base_config.n_polynomial}",
+    )
     ax.set_title("comparison of noise kernel percentage error")
     ax.set_ylabel("Percentage Error, %")
     line.set_label(
