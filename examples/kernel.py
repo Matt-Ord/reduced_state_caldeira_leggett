@@ -1,10 +1,11 @@
 import numpy as np
 
 from reduced_state_caldeira_leggett.plot import (
+    plot_chebyshev_fit_time,
+    plot_fft_fit_time,
+    plot_get_trig_operators_time,
     plot_isotropic_kernel_percentage_error,
-    plot_kernel_fit_runtime,
     plot_noise_kernel,
-    plot_poly_fit_runtime,
 )
 from reduced_state_caldeira_leggett.system import (
     HYDROGEN_NICKEL_SYSTEM,
@@ -14,7 +15,7 @@ from reduced_state_caldeira_leggett.system import (
 if __name__ == "__main__":
     system = HYDROGEN_NICKEL_SYSTEM
     config = SimulationConfig(
-        shape=(2,),
+        shape=(3,),
         resolution=(31,),
         n_bands=3,
         type="bloch",
@@ -23,7 +24,7 @@ if __name__ == "__main__":
         n_polynomial=6,
     )
     config1 = SimulationConfig(
-        shape=(5,),
+        shape=(2,),
         resolution=(31,),
         n_bands=3,
         type="bloch",
@@ -31,13 +32,17 @@ if __name__ == "__main__":
         fit_method="fft",
         n_polynomial=10,
     )
-    size = np.array([(3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,)])
-    n_run = 1000
+    size = np.arange(1, 11)
+    n_run = 50
     # add 2d example here
 
+    plot_fft_fit_time(system, config, size, n_run)
+
+    plot_chebyshev_fit_time(system, config, size, n_run)
+
+    plot_get_trig_operators_time(system, config, size, n_run)
+
     plot_noise_kernel(system, config)
-    plot_poly_fit_runtime(system, config, size, n_run)
-    plot_kernel_fit_runtime(system, config1, size, n_run)
     plot_isotropic_kernel_percentage_error(
         system,
         config,
