@@ -294,7 +294,7 @@ def plot_noise_kernel(
 
 
 # fitted with complexity
-def plot_chebyshev_fit_time(
+def plot_operators_fit_time_against_number_of_states(
     system: PeriodicSystem,
     config: SimulationConfig,
     size: np.ndarray[tuple[int, int], np.dtype[Any]],
@@ -302,58 +302,81 @@ def plot_chebyshev_fit_time(
 ) -> None:
     np.random.shuffle(size)
     n_data_pts = []
-    config.fit_method = "poly fit"
-    runtime_fit = []
-    error_fit = []
+    runtime = []
+    error = []
     for s in size:
         config.shape = (s,)
         times_fit = []
         for n in range(n_run):
             times = get_operators_fit_time(system, config)
-            times_fit.append(times[0][0])
+            times_fit.append(
+                times[0][0]
+                if config.fit_method in ("poly fit", "explicit polynomial")
+                else times[0],
+            )
         avg_time_fit = np.mean(np.array(times_fit)).item()
-        runtime_fit.append(avg_time_fit)
+        runtime.append(avg_time_fit)
         time_err_fit = np.std(np.array(times_fit)).item() / np.sqrt(n_run)
-        error_fit.append(time_err_fit)
+        error.append(time_err_fit)
         n_data_pts.append(s * config.resolution[0])
         if (n + 1) % 100 == 0 and n != 0:
             time.sleep(2.0)
+    xdata = np.array(n_data_pts)
 
-    def _runtime_scale(x, a, b):
-        return a * x**2 + b * x**3
+    def _complexity(x, a):
+        match config.fit_method:
+            case "poly fit" | "explicit polynomial":
+                return a
+            case "fft":
+                return a * x * np.log(x)
+            case "eigenvalue":
+                return a * x**3
 
     popt, _ = scipy.optimize.curve_fit(
-        _runtime_scale,
-        size * config.resolution,
-        np.array(runtime_fit),
-        sigma=np.array(error_fit),
+        _complexity,
+        xdata,
+        np.array(runtime),
+        sigma=np.array(error),
     )
-    plt.plot(
-        size * config.resolution,
-        popt[0] * np.array(size * config.resolution) ** 2
-        + popt[1] * np.array(size * config.resolution) ** 3,
-        marker="o",
-        label=f"complexity\n, {popt[0]/config.n_polynomial}"
-        r"$N\cdot n^2$"
-        f"+{popt[1]}"
-        r"$n^3$",
-        linestyle="none",
-    )
+    match config.fit_method:
+        case "poly fit" | "explicit polynomial":
+            plt.plot(
+                xdata,
+                popt[0] * np.ones(len(xdata)),
+                marker="o",
+                label=f"complexity {popt[0]}",
+                linestyle="none",
+            )
+        case "fft":
+            plt.plot(
+                xdata,
+                popt[0] * xdata * np.log(xdata),
+                marker="o",
+                label=f"complexity\n {popt[0]}" r"$N \cdot$" "ln" r"$N$",
+                linestyle="none",
+            )
+        case "eigenvalue":
+            plt.plot(
+                xdata,
+                popt[0] * xdata**3,
+                marker="o",
+                label=f"complexity\n {popt[0]}" r"$n^3$",
+                linestyle="none",
+            )
     plt.errorbar(
         x=n_data_pts,
-        y=np.array(runtime_fit),
-        yerr=np.array(error_fit),
+        y=np.array(runtime),
+        yerr=np.array(error),
         fmt="x",
         capsize=5.0,
         linestyle="none",
-        label="numpy fit",
+        label="Measured runtime",
     )
-
     plt.xlabel("number of states")
     plt.ylabel("runtime/seconds")
     plt.title(
-        f"Chebyshev, N = {config.n_polynomial},\n"
-        f"temperature = {config.temperature}, number of run = {n_run}",
+        f"{config.fit_method}, N = {config.n_polynomial},\n"
+        f"temperature = {config.temperature}, number of runs = {n_run}",
     )
     plt.legend()
     plt.show()
@@ -419,71 +442,6 @@ def plot_get_trig_operators_time(
     plt.ylabel("runtime/seconds")
     plt.title(
         f"Get trig operators, n = {config.n_polynomial},\n"
-        f"temperature = {config.temperature}, number of run = {n_run}",
-    )
-    plt.legend()
-    plt.show()
-
-    input()
-
-
-def plot_fft_fit_time(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-    size: np.ndarray[tuple[int, int], np.dtype[Any]],
-    n_run: int,
-) -> None:
-    np.random.shuffle(size)
-    n_data_pts = []
-    config.fit_method = "fft"
-    runtime_fft = []
-    error_fft = []
-    for s in size:
-        config.shape = (s,)
-        times_fft = []
-        for n in range(n_run):
-            times = get_operators_fit_time(system, config)
-            times_fft.append(times[0])
-        avg_time_fft = np.mean(np.array(times_fft)).item()
-        runtime_fft.append(avg_time_fft)
-        time_err_fft = np.std(np.array(times_fft)).item() / np.sqrt(n_run)
-        error_fft.append(time_err_fft)
-        n_data_pts.append(s * config.resolution[0])
-        if (n + 1) % 100 == 0 and n != 0:
-            time.sleep(2.0)
-
-    def _runtime_scale(x, a):
-        return a * x * np.log(x)
-
-    popt, _ = scipy.optimize.curve_fit(
-        _runtime_scale,
-        size * config.resolution,
-        np.array(runtime_fft),
-        sigma=np.array(error_fft),
-    )
-    plt.plot(
-        size * config.resolution,
-        popt[0]
-        * np.array(size * config.resolution)
-        * np.log(np.array(size * config.resolution)),
-        marker="o",
-        label=f"complexity\n, {popt[0]}" r"$N\cdot$" "ln" r"$N$",
-        linestyle="none",
-    )
-    plt.errorbar(
-        x=n_data_pts,
-        y=np.array(runtime_fft),
-        yerr=np.array(error_fft),
-        fmt="x",
-        capsize=5.0,
-        linestyle="none",
-        label="fft",
-    )
-
-    plt.xlabel("number of states")
-    plt.ylabel("runtime/seconds")
-    plt.title(
-        f"FFT, N = {config.n_polynomial},\n"
         f"temperature = {config.temperature}, number of run = {n_run}",
     )
     plt.legend()

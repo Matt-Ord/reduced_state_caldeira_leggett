@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
@@ -38,6 +37,7 @@ from surface_potential_analysis.kernel.gaussian import (
 )
 from surface_potential_analysis.kernel.get_runtime import (
     get_time_eigh,
+    get_time_explicit,
     get_time_real_isotropic_fft,
     get_time_stacked_taylor_expansion,
 )
@@ -518,41 +518,15 @@ def get_operators_fit_time(
     time = []
     match config.fit_method:
         case "poly fit":
-            operators = get_noise_operators_real_isotropic_stacked_taylor_expansion(
-                kernel,
-                n=config.n_polynomial,
-            )
             time.append(
                 get_time_stacked_taylor_expansion(kernel, n=config.n_polynomial),
             )
         case "fft":
-            operators = get_noise_operators_real_isotropic_fft(
-                kernel,
-            )
             time.append(get_time_real_isotropic_fft(kernel))
-            operators = truncate_diagonal_noise_operator_list(
-                operators,
-                range(config.n_polynomial),
-            )
         case "eigenvalue":
-            operators = get_noise_operators_diagonal_eigenvalue(
-                as_diagonal_kernel_from_isotropic(kernel),
-            )
             time.append(get_time_eigh(as_diagonal_kernel_from_isotropic(kernel)))
-            operators = truncate_diagonal_noise_operator_list(
-                operators,
-                range(config.n_polynomial),
-            )
         case "explicit polynomial":
-            ts = datetime.datetime.now(tz=datetime.UTC)
-            operators = get_gaussian_operators_explicit_taylor(
-                basis,
-                a,
-                lambda_,
-                n_terms=config.n_polynomial,
-            )
-            te = datetime.datetime.now(tz=datetime.UTC)
-            time.append((te - ts).total_seconds())
+            time.append(get_time_explicit(basis, config.n_polynomial, a, lambda_))
     return time
 
 

@@ -1,11 +1,9 @@
 import numpy as np
 
 from reduced_state_caldeira_leggett.plot import (
-    plot_chebyshev_fit_time,
-    plot_fft_fit_time,
-    plot_get_trig_operators_time,
     plot_isotropic_kernel_percentage_error,
     plot_noise_kernel,
+    plot_operators_fit_time_against_number_of_states,
 )
 from reduced_state_caldeira_leggett.system import (
     HYDROGEN_NICKEL_SYSTEM,
@@ -20,7 +18,7 @@ if __name__ == "__main__":
         n_bands=3,
         type="bloch",
         temperature=150,
-        fit_method="poly fit",
+        fit_method="explicit polynomial",
         n_polynomial=6,
     )
     config1 = SimulationConfig(
@@ -36,11 +34,9 @@ if __name__ == "__main__":
     n_run = 50
     # add 2d example here
 
-    plot_fft_fit_time(system, config, size, n_run)
+    plot_operators_fit_time_against_number_of_states(system, config, size, n_run)
 
-    plot_chebyshev_fit_time(system, config, size, n_run)
-
-    plot_get_trig_operators_time(system, config, size, n_run)
+    # plot_get_trig_operators_time(system, config, size, n_run)
 
     plot_noise_kernel(system, config)
     plot_isotropic_kernel_percentage_error(
