@@ -489,10 +489,7 @@ def get_noise_kernel(
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
 ]:
     operators = get_noise_operators(system, config)
-    return get_isotropic_kernel_from_diagonal_operators(
-        operators,
-        assert_isotropic=False,
-    )
+    return get_isotropic_kernel_from_diagonal_operators(operators)
 
 
 def get_temperature_corrected_noise_operators(
