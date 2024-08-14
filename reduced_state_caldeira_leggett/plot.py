@@ -314,13 +314,14 @@ def plot_operators_fit_time_against_number_of_states(
                 if config.fit_method in ("poly fit", "explicit polynomial")
                 else times[0],
             )
+            if (n + 1) % 100 == 0 and n != 0:
+                time.sleep(2.0)
         avg_time_fit = np.mean(np.array(times_fit)).item()
         runtime.append(avg_time_fit)
         time_err_fit = np.std(np.array(times_fit)).item() / np.sqrt(n_run)
         error.append(time_err_fit)
         n_data_pts.append(s * config.resolution[0])
-        if (n + 1) % 100 == 0 and n != 0:
-            time.sleep(2.0)
+
     xdata = np.array(n_data_pts)
 
     def _complexity(x, a):
@@ -384,6 +385,93 @@ def plot_operators_fit_time_against_number_of_states(
     input()
 
 
+def plot_operators_fit_time_against_n_polynomial(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+    n_terms_range: int,
+    n_run: int,
+) -> None:
+    n_range = np.arange(10, n_terms_range, 10)
+    np.random.shuffle(n_range)
+    runtime = []
+    error = []
+    for n in n_range:
+        config.n_polynomial = n
+        times_fit = []
+        for m in range(n_run):
+            times = get_operators_fit_time(system, config)
+            times_fit.append(
+                times[0][0]
+                if config.fit_method in ("poly fit", "explicit polynomial")
+                else times[0],
+            )
+            if (m + 1) % 100 == 0 and m != 0:
+                time.sleep(2.0)
+        avg_time_fit = np.mean(np.array(times_fit)).item()
+        runtime.append(avg_time_fit)
+        time_err_fit = np.std(np.array(times_fit)).item() / np.sqrt(n_run)
+        error.append(time_err_fit)
+
+    def _complexity(x, a):
+        match config.fit_method:
+            case "eigenvalue" | "fft":
+                return a
+            case "poly fit" | "explicit polynomial":
+                return a * x**3
+
+    popt, _ = scipy.optimize.curve_fit(
+        _complexity,
+        n_range,
+        np.array(runtime),
+        sigma=np.array(error),
+    )
+    # try_fit_time = (
+    #     np.polynomial.Polynomial.fit(x=n_range, y=np.array(runtime), deg=3)
+    #     .convert()
+    #     .coef
+    # )
+    match config.fit_method:
+        case "eigenvalue" | "fft":
+            plt.plot(
+                n_range,
+                popt[0] * np.ones(len(n_range)),
+                marker="o",
+                label=f"complexity {popt[0]}",
+                linestyle="none",
+            )
+        case "poly fit" | "explicit polynomial":
+            plt.plot(
+                n_range,
+                # try_fit_time[0]
+                # + try_fit_time[1] * n_range
+                # + try_fit_time[2] * n_range**2
+                # + try_fit_time[3] * n_range**3,
+                popt[0] * n_range**3,
+                marker="o",
+                label=f"complexity\n {popt[0]}" r"$n^3$",
+                linestyle="none",
+            )
+    plt.errorbar(
+        x=n_range,
+        y=np.array(runtime),
+        yerr=np.array(error),
+        fmt="x",
+        capsize=5.0,
+        linestyle="none",
+        label="Measured runtime",
+    )
+    plt.xlabel("n terms")
+    plt.ylabel("runtime/seconds")
+    plt.title(
+        f"{config.fit_method}, number of states = {config.shape[0]*config.resolution[0]},\n"
+        f"temperature = {config.temperature}, number of runs = {n_run}",
+    )
+    plt.legend()
+    plt.show()
+
+    input()
+
+
 def plot_get_trig_operators_time(
     system: PeriodicSystem,
     config: SimulationConfig,
@@ -401,13 +489,13 @@ def plot_get_trig_operators_time(
         for n in range(n_run):
             times = get_operators_fit_time(system, config)
             times_get_op.append(times[0][1])
+            if (n + 1) % 100 == 0 and n != 0:
+                time.sleep(2.0)
         avg_time_get_op = np.mean(np.array(times_get_op)).item()
         runtime_get_op.append(avg_time_get_op)
         time_err_get_op = np.std(np.array(times_get_op)).item() / np.sqrt(n_run)
         error_get_op.append(time_err_get_op)
         nk_pts_length.append(s * config.resolution[0])
-        if (n + 1) % 100 == 0 and n != 0:
-            time.sleep(2.0)
 
     def _runtime_scale(x, a):
         return a * x
@@ -441,7 +529,7 @@ def plot_get_trig_operators_time(
     plt.xlabel("number of states")
     plt.ylabel("runtime/seconds")
     plt.title(
-        f"Get trig operators, n = {config.n_polynomial},\n"
+        f"Get trig operators, n = {config.n_polynomial}, fit method = {config.fit_method}\n"
         f"temperature = {config.temperature}, number of run = {n_run}",
     )
     plt.legend()
