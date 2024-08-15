@@ -338,7 +338,7 @@ def _get_bloch_hamiltonian(
 ]:
     bloch_fraction = np.array([0]) if bloch_fraction is None else bloch_fraction
 
-    potential = _get_potential(system, shape, resolution)
+    potential = get_potential(system, shape, resolution)
 
     converted = convert_potential_to_basis(
         potential,

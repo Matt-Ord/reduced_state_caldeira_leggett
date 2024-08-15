@@ -18,16 +18,15 @@ from surface_potential_analysis.kernel.plot import (
     plot_isotropic_noise_kernel_2d_x,
     plot_kernel_2d,
 )
-from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.operator.operator_list import (
     select_diagonal_operator,
     select_operator,
 )
 from surface_potential_analysis.operator.plot import (
+    plot_diagonal_operator_along_diagonal_1d_x,
+    plot_diagonal_operator_along_diagonal_2d_x,
     plot_eigenstate_occupations,
     plot_operator_2d,
-    plot_operator_along_diagonal_1d_x,
-    plot_operator_along_diagonal_2d_x,
 )
 from surface_potential_analysis.potential.plot import (
     plot_potential_1d_x,
@@ -159,7 +158,7 @@ def plot_state_against_t(
     step: int,
     dt_ratio: float = 500,
 ) -> None:
-    potential = get_potential_1d(
+    potential = get_potential(
         system,
         config.shape,
         config.resolution,
@@ -218,7 +217,7 @@ def plot_2d_111_potential(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> None:
-    potential = get_potential_2d(system, config.shape, config.resolution)
+    potential = get_potential(system, config.shape, config.resolution)
     fig, _, _ = plot_potential_2d_x(potential)
     fig.show()
     input()
@@ -232,10 +231,10 @@ def plot_noise_operators(
 ) -> None:
     """Plot the noise operators generated."""
     operators = get_noise_operators(system, config)
-    operator = as_operator(select_diagonal_operator(operators, idx=idx))
+    operator = select_diagonal_operator(operators, idx=idx)
 
     for i in range(len(config.shape)):
-        fig, ax, _ = plot_operator_along_diagonal_1d_x(
+        fig, ax, _ = plot_diagonal_operator_along_diagonal_1d_x(
             operator,
             axes=(i,),
             measure="real",
@@ -245,7 +244,7 @@ def plot_noise_operators(
 
     for i in range(len(config.shape)):
         for j in range(i + 1, len(config.shape)):
-            fig, ax, _ = plot_operator_along_diagonal_2d_x(
+            fig, ax, _ = plot_diagonal_operator_along_diagonal_2d_x(
                 operator,
                 axes=(i, j),
                 measure="real",
