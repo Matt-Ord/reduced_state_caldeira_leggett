@@ -41,7 +41,7 @@ from surface_potential_analysis.kernel.kernel import (
 from surface_potential_analysis.kernel.solve import (
     get_noise_operators_diagonal_eigenvalue,
     get_noise_operators_real_isotropic_stacked_fft,
-    get_noise_operators_real_isotropic_stacked_taylor_expansion,
+    get_noise_operators_real_isotropic_taylor_expansion,
 )
 from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.potential.conversion import (
@@ -220,7 +220,7 @@ def _get_extrapolated_potential(
     return {"basis": extrapolated_basis, "data": scaled_potential}
 
 
-def get_potential_1d(
+def _get_potential_1d(
     system: PeriodicSystem,
     shape: tuple[int, ...],
     resolution: tuple[int, ...],
@@ -268,7 +268,7 @@ def _get_fundamental_potential_2d(
     }
 
 
-def get_potential_2d(
+def _get_potential_2d(
     system: PeriodicSystem,
     shape: tuple[_L0Inv, ...],
     resolution: tuple[int, ...],
@@ -291,7 +291,7 @@ def get_potential_2d(
     return _get_extrapolated_potential(interpolated, shape)
 
 
-def _get_potential(
+def get_potential(
     system: PeriodicSystem,
     shape: tuple[int, ...],
     resolution: tuple[int, ...],
@@ -302,13 +302,13 @@ def _get_potential(
 ]:
     match len(shape):
         case 1:
-            return get_potential_1d(
+            return _get_potential_1d(
                 system,
                 cast(tuple[int], shape),
                 cast(tuple[int], resolution),
             )
         case 2:
-            return get_potential_2d(
+            return _get_potential_2d(
                 system,
                 cast(tuple[int, int], shape),
                 cast(tuple[int, int], resolution),
@@ -324,7 +324,7 @@ def _get_basis(
 ) -> TupleBasisWithLengthLike[
     *tuple[EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any], ...]
 ]:
-    return _get_potential(system, config.shape, config.resolution)["basis"]
+    return get_potential(system, config.shape, config.resolution)["basis"]
 
 
 def _get_bloch_hamiltonian(
@@ -338,7 +338,7 @@ def _get_bloch_hamiltonian(
 ]:
     bloch_fraction = np.array([0]) if bloch_fraction is None else bloch_fraction
 
-    potential = _get_potential(system, shape, resolution)
+    potential = get_potential(system, shape, resolution)
 
     converted = convert_potential_to_basis(
         potential,
@@ -435,7 +435,7 @@ def get_noise_operators(
     kernel = get_true_noise_kernel(system, config)
     match config.fit_method:
         case "fitted polynomial":
-            return get_noise_operators_real_isotropic_stacked_taylor_expansion(
+            return get_noise_operators_real_isotropic_taylor_expansion(
                 kernel,
                 n=config.n_polynomial,
             )
