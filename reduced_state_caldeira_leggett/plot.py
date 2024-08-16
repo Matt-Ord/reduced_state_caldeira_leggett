@@ -20,24 +20,22 @@ from surface_potential_analysis.kernel.plot import (
     plot_diagonal_kernel_truncation_error,
     plot_isotropic_kernel_error,
     plot_isotropic_noise_kernel_1d_x,
+    plot_isotropic_noise_kernel_2d_x,
     plot_kernel_2d,
 )
-from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.operator.operator_list import (
     select_diagonal_operator,
     select_operator,
 )
 from surface_potential_analysis.operator.plot import (
+    plot_diagonal_operator_along_diagonal_1d_x,
+    plot_diagonal_operator_along_diagonal_2d_x,
     plot_eigenstate_occupations,
     plot_operator_2d,
-    plot_operator_along_diagonal,
 )
 from surface_potential_analysis.potential.plot import (
     plot_potential_1d_x,
     plot_potential_2d_x,
-)
-from surface_potential_analysis.state_vector.eigenstate_calculation import (
-    calculate_eigenvectors_hermitian,
 )
 from surface_potential_analysis.state_vector.plot import (
     animate_state_over_list_1d_x,
@@ -61,39 +59,13 @@ from reduced_state_caldeira_leggett.system import (
     get_noise_operators,
     get_operators_fit_time,
     get_potential,
-    get_potential_1d,
     get_temperature_corrected_noise_operators,
     get_true_noise_kernel,
 )
 
 if TYPE_CHECKING:
     from matplotlib.lines import Line2D
-
-
-def plot_system_eigenstates(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> None:
-    """Plot the potential against position."""
-    potential = get_potential_1d(
-        system,
-        config.shape,
-        config.resolution,
-    )
-    fig, ax, _ = plot_potential_1d_x(potential)
-
-    hamiltonian = get_hamiltonian(system, config)
-    eigenvectors = calculate_eigenvectors_hermitian(hamiltonian)
-
-    ax1 = ax.twinx()
-    fig2, ax2 = plt.subplots()
-    for _i, state in enumerate(state_vector_list_into_iter(eigenvectors)):
-        plot_state_1d_x(state, ax=ax1)
-        plot_state_1d_k(state, ax=ax2)
-
-    fig.show()
-    fig2.show()
-    input()
+    from surface_potential_analysis.types import SingleFlatIndexLike
 
 
 def plot_basis_states(
@@ -101,7 +73,7 @@ def plot_basis_states(
     config: SimulationConfig,
 ) -> None:
     """Plot the potential against position."""
-    potential = get_potential_1d(
+    potential = get_potential(
         system,
         config.shape,
         config.resolution,
@@ -193,7 +165,7 @@ def plot_state_against_t(
     step: int,
     dt_ratio: float = 500,
 ) -> None:
-    potential = get_potential_1d(
+    potential = get_potential(
         system,
         config.shape,
         config.resolution,
@@ -252,7 +224,7 @@ def plot_2d_111_potential(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> None:
-    potential = get_potential(system, config)
+    potential = get_potential(system, config.shape, config.resolution)
     fig, _, _ = plot_potential_2d_x(potential)
     fig.show()
     input()
@@ -261,13 +233,31 @@ def plot_2d_111_potential(
 def plot_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
+    *,
+    idx: SingleFlatIndexLike = 0,
 ) -> None:
     """Plot the noise operators generated."""
     operators = get_noise_operators(system, config)
-    op = select_diagonal_operator(operators, idx=1)
-    fig1, ax1, _ = plot_operator_along_diagonal(as_operator(op), measure="real")
-    ax1.set_title("fitted noise operator")
-    fig1.show()
+    operator = select_diagonal_operator(operators, idx=idx)
+
+    for i in range(len(config.shape)):
+        fig, ax, _ = plot_diagonal_operator_along_diagonal_1d_x(
+            operator,
+            axes=(i,),
+            measure="real",
+        )
+        ax.set_title("fitted noise operator")
+        fig.show()
+
+    for i in range(len(config.shape)):
+        for j in range(i + 1, len(config.shape)):
+            fig, ax, _ = plot_diagonal_operator_along_diagonal_2d_x(
+                operator,
+                axes=(i, j),
+                measure="real",
+            )
+            ax.set_title("fitted noise operator")
+            fig.show()
     input()
 
 
@@ -280,19 +270,54 @@ def plot_noise_kernel(
     True kernel and the fitted kernel compared.
     """
     kernel_real = get_true_noise_kernel(system, config)
-    fig, ax, line1 = plot_isotropic_noise_kernel_1d_x(kernel_real)
-    line1.set_label("true noise, no temperature correction")
+    kernel_fitted = get_noise_kernel(system, config)
+
+    for i in range(len(config.shape)):
+        fig, ax, line1 = plot_isotropic_noise_kernel_1d_x(kernel_real, axes=(i,))
+        line1.set_label("actual noise")
+        fig.show()
+
+        fig, _, line2 = plot_isotropic_noise_kernel_1d_x(
+            kernel_fitted,
+            axes=(i,),
+            ax=ax,
+        )
+        line2.set_linestyle("--")
+        line2.set_label("fitted noise")
+
+        ax.set_title(
+            f"noise kernel, fit method = {config.fit_method}, "
+            f"n = {config.n_polynomial}, "
+            f"temperature = {config.temperature}",
+        )
+        ax.legend()
+        fig.show()
+
+    for i in range(len(config.shape)):
+        for j in range(i + 1, len(config.shape)):
+            fig, ax, line1 = plot_isotropic_noise_kernel_2d_x(kernel_real, axes=(i, j))
+            line1.set_label("actual noise")
+            fig.show()
+
+            ax.set_title("True kernel in 2d")
+
+            fig, ax, line2 = plot_isotropic_noise_kernel_2d_x(
+                kernel_fitted,
+                axes=(i, j),
+            )
+            line2.set_linestyle("--")
+            line2.set_label("fitted noise")
+
+            ax.set_title("Fitted kernel in 2d")
+            ax.legend()
+            fig.show()
+
+    operators = get_noise_operators(system, config)
+    diagonal = get_diagonal_kernel_from_diagonal_operators(operators)
+    fig, ax, _ = plot_diagonal_kernel_2d(diagonal)
+    ax.set_title("Full noise kernel")
     fig.show()
 
-    kernel_isotropic_fitted = get_noise_kernel(system, config)
-    fig, _, line2 = plot_isotropic_noise_kernel_1d_x(kernel_isotropic_fitted, ax=ax)
-    line2.set_label("fitted noise, no temperature correction")
-
-    ax.set_title(
-        f"noise kernel, fit method = {config.fit_method}, n = {config.n_polynomial}, temperature = {config.temperature}",
-    )
-    ax.legend()
-    fig.show()
     input()
 
 
@@ -335,7 +360,7 @@ def plot_operators_fit_time_against_number_of_states(
 
     def _get_complexity(x, a):
         match config.fit_method:
-            case "poly fit" | "explicit polynomial":
+            case "fitted polynomial" | "explicit polynomial":
                 return a * x / x
             case "fft":
                 return a * x * np.log(x)
@@ -352,7 +377,7 @@ def plot_operators_fit_time_against_number_of_states(
         ),
     )
     match config.fit_method:
-        case "poly fit" | "explicit polynomial":
+        case "fitted polynomial" | "explicit polynomial":
             plt.plot(
                 n_data_pts,
                 _get_complexity(n_data_pts, popt[0]),
@@ -412,7 +437,7 @@ def plot_operators_fit_time_against_n_polynomial(
         match config.fit_method:
             case "eigenvalue" | "fft":
                 return a * x / x
-            case "poly fit" | "explicit polynomial":
+            case "fitted polynomial" | "explicit polynomial":
                 return a * x**3
 
     popt, _ = cast(
@@ -434,7 +459,7 @@ def plot_operators_fit_time_against_n_polynomial(
                 label=f"complexity {popt[0]}",
                 linestyle="none",
             )
-        case "poly fit" | "explicit polynomial":
+        case "fitted polynomial" | "explicit polynomial":
             plt.plot(
                 n_range,
                 _get_complexity(n_range, popt[0]),
@@ -490,4 +515,5 @@ def plot_isotropic_kernel_percentage_error(
     ax.set_ylabel("Percentage Error, %")
     ax.legend()
     fig.show()
+
     input()
