@@ -20,7 +20,7 @@ if __name__ == "__main__":
         n_bands=3,
         type="bloch",
         temperature=150,
-        fit_method="fitted polynomial",
+        fit_method="fft",
         n_polynomial=6,
     )
     config1 = SimulationConfig(
@@ -32,11 +32,11 @@ if __name__ == "__main__":
         fit_method="fft",
         n_polynomial=10,
     )
-    size = np.arange(1, 10)
+    size = np.arange(10, 110, 10)
     n_run = 10
     n_terms_range = 110
-    # add 2d example here
 
+    plot_noise_operators(system, config, idx=1)
     plot_operators_fit_time_against_number_of_states(system, config, size, n_run=n_run)
 
     plot_operators_fit_time_against_n_polynomial(
@@ -46,11 +46,8 @@ if __name__ == "__main__":
         n_run=n_run,
     )
 
-    plot_noise_kernel(system, config)
-
     plot_isotropic_kernel_percentage_error(
         system,
         [config, config1],
     )
-
-    plot_noise_operators(system, config)
+    plot_noise_kernel(system, config)

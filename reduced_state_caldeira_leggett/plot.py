@@ -244,7 +244,7 @@ def plot_noise_operators(
         fig, ax, _ = plot_diagonal_operator_along_diagonal_1d_x(
             operator,
             axes=(i,),
-            measure="real",
+            measure="abs",
         )
         ax.set_title("fitted noise operator")
         fig.show()
@@ -254,10 +254,11 @@ def plot_noise_operators(
             fig, ax, _ = plot_diagonal_operator_along_diagonal_2d_x(
                 operator,
                 axes=(i, j),
-                measure="real",
+                measure="abs",
             )
             ax.set_title("fitted noise operator")
             fig.show()
+
     input()
 
 

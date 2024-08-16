@@ -17,8 +17,7 @@ if __name__ == "__main__":
         temperature=150,
         fit_method="fft",
     )
-
-    plot_noise_kernel(system, config)
-
     for i in range(9):
         plot_noise_operators(system, config, idx=i)
+
+    plot_noise_kernel(system, config)
