@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import scipy
@@ -60,11 +60,14 @@ from reduced_state_caldeira_leggett.system import (
     get_noise_kernel,
     get_noise_operators,
     get_operators_fit_time,
+    get_potential,
     get_potential_1d,
-    get_potential_2d,
     get_temperature_corrected_noise_operators,
     get_true_noise_kernel,
 )
+
+if TYPE_CHECKING:
+    from matplotlib.lines import Line2D
 
 
 def plot_system_eigenstates(
@@ -249,7 +252,7 @@ def plot_2d_111_potential(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> None:
-    potential = get_potential_2d(system, config.shape, config.resolution)
+    potential = get_potential(system, config)
     fig, _, _ = plot_potential_2d_x(potential)
     fig.show()
     input()
@@ -293,81 +296,90 @@ def plot_noise_kernel(
     input()
 
 
-# fitted with complexity
+def get_time_and_run(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+    parameter: np.ndarray[tuple[int], np.dtype[Any]],
+    *,
+    n_run: int,
+) -> list[list[list[float]] | list[float]]:
+    rng = np.random.default_rng()
+    runtime: list[list[float]] = [[] for _ in range(len(parameter))]
+    error: list[float] = []
+    for n in range(n_run):
+        shuffled_param_list = rng.permutation(parameter)
+        for s in shuffled_param_list:
+            config.shape = (s,)
+            times = get_operators_fit_time(system, config)
+            idx_in_original = np.argwhere(parameter == s)[0][0]
+            runtime[idx_in_original].append(
+                times,
+            )
+        if (n + 1) % 100 == 0 and n != 0:
+            time.sleep(2.0)
+    error = np.std(runtime, axis=1) / np.sqrt(n_run)
+    runtime = np.mean(runtime, axis=1)
+    return [runtime, error]
+
+
 def plot_operators_fit_time_against_number_of_states(
     system: PeriodicSystem,
     config: SimulationConfig,
-    size: np.ndarray[tuple[int, int], np.dtype[Any]],
+    size: np.ndarray[tuple[int], np.dtype[Any]],
+    *,
     n_run: int,
 ) -> None:
-    np.random.shuffle(size)
-    n_data_pts = []
-    runtime = []
-    error = []
-    for s in size:
-        config.shape = (s,)
-        times_fit = []
-        for n in range(n_run):
-            times = get_operators_fit_time(system, config)
-            times_fit.append(
-                times[0][0]
-                if config.fit_method in ("poly fit", "explicit polynomial")
-                else times[0],
-            )
-            if (n + 1) % 100 == 0 and n != 0:
-                time.sleep(2.0)
-        avg_time_fit = np.mean(np.array(times_fit)).item()
-        runtime.append(avg_time_fit)
-        time_err_fit = np.std(np.array(times_fit)).item() / np.sqrt(n_run)
-        error.append(time_err_fit)
-        n_data_pts.append(s * config.resolution[0])
+    n_data_pts = size * config.resolution[0]
+    runtime = get_time_and_run(system, config, size, n_run=n_run)[0]
+    error = get_time_and_run(system, config, size, n_run=n_run)[1]
 
-    xdata = np.array(n_data_pts)
-
-    def _complexity(x, a):
+    def _get_complexity(x, a):
         match config.fit_method:
             case "poly fit" | "explicit polynomial":
-                return a
+                return a * x / x
             case "fft":
                 return a * x * np.log(x)
             case "eigenvalue":
                 return a * x**3
 
-    popt, _ = scipy.optimize.curve_fit(
-        _complexity,
-        xdata,
-        np.array(runtime),
-        sigma=np.array(error),
+    popt, _ = cast(
+        np.ndarray[tuple[int], np.dtype[np.float64]],
+        scipy.optimize.curve_fit(
+            _get_complexity,
+            n_data_pts,
+            runtime,
+            sigma=error,
+        ),
     )
     match config.fit_method:
         case "poly fit" | "explicit polynomial":
             plt.plot(
-                xdata,
-                popt[0] * np.ones(len(xdata)),
+                n_data_pts,
+                _get_complexity(n_data_pts, popt[0]),
                 marker="o",
                 label=f"complexity {popt[0]}",
                 linestyle="none",
             )
         case "fft":
             plt.plot(
-                xdata,
-                popt[0] * xdata * np.log(xdata),
+                n_data_pts,
+                _get_complexity(n_data_pts, popt[0]),
                 marker="o",
-                label=f"complexity\n {popt[0]}" r"$N \cdot$" "ln" r"$N$",
+                label=f"complexity {popt[0]}" r"$N \cdot$" "ln" r"$N$",
                 linestyle="none",
             )
         case "eigenvalue":
             plt.plot(
-                xdata,
-                popt[0] * xdata**3,
+                n_data_pts,
+                _get_complexity(n_data_pts, popt[0]),
                 marker="o",
-                label=f"complexity\n {popt[0]}" r"$n^3$",
+                label=f"complexity {popt[0]}" r"$n^3$",
                 linestyle="none",
             )
     plt.errorbar(
         x=n_data_pts,
-        y=np.array(runtime),
-        yerr=np.array(error),
+        y=runtime,
+        yerr=error,
         fmt="x",
         capsize=5.0,
         linestyle="none",
@@ -388,53 +400,36 @@ def plot_operators_fit_time_against_number_of_states(
 def plot_operators_fit_time_against_n_polynomial(
     system: PeriodicSystem,
     config: SimulationConfig,
+    *,
     n_terms_range: int,
     n_run: int,
 ) -> None:
     n_range = np.arange(10, n_terms_range, 10)
-    np.random.shuffle(n_range)
-    runtime = []
-    error = []
-    for n in n_range:
-        config.n_polynomial = n
-        times_fit = []
-        for m in range(n_run):
-            times = get_operators_fit_time(system, config)
-            times_fit.append(
-                times[0][0]
-                if config.fit_method in ("poly fit", "explicit polynomial")
-                else times[0],
-            )
-            if (m + 1) % 100 == 0 and m != 0:
-                time.sleep(2.0)
-        avg_time_fit = np.mean(np.array(times_fit)).item()
-        runtime.append(avg_time_fit)
-        time_err_fit = np.std(np.array(times_fit)).item() / np.sqrt(n_run)
-        error.append(time_err_fit)
+    runtime = get_time_and_run(system, config, n_range, n_run=n_run)[0]
+    error = get_time_and_run(system, config, n_range, n_run=n_run)[1]
 
-    def _complexity(x, a):
+    def _get_complexity(x, a):
         match config.fit_method:
             case "eigenvalue" | "fft":
-                return a
+                return a * x / x
             case "poly fit" | "explicit polynomial":
                 return a * x**3
 
-    popt, _ = scipy.optimize.curve_fit(
-        _complexity,
-        n_range,
-        np.array(runtime),
-        sigma=np.array(error),
+    popt, _ = cast(
+        np.ndarray[tuple[int], np.dtype[np.float64]],
+        scipy.optimize.curve_fit(
+            _get_complexity,
+            n_range,
+            runtime,
+            sigma=error,
+        ),
     )
-    # try_fit_time = (
-    #     np.polynomial.Polynomial.fit(x=n_range, y=np.array(runtime), deg=3)
-    #     .convert()
-    #     .coef
-    # )
+
     match config.fit_method:
         case "eigenvalue" | "fft":
             plt.plot(
                 n_range,
-                popt[0] * np.ones(len(n_range)),
+                _get_complexity(n_range, popt[0]),
                 marker="o",
                 label=f"complexity {popt[0]}",
                 linestyle="none",
@@ -442,19 +437,15 @@ def plot_operators_fit_time_against_n_polynomial(
         case "poly fit" | "explicit polynomial":
             plt.plot(
                 n_range,
-                # try_fit_time[0]
-                # + try_fit_time[1] * n_range
-                # + try_fit_time[2] * n_range**2
-                # + try_fit_time[3] * n_range**3,
-                popt[0] * n_range**3,
+                _get_complexity(n_range, popt[0]),
                 marker="o",
-                label=f"complexity\n {popt[0]}" r"$n^3$",
+                label=f"complexity {popt[0]}" r"$n^3$",
                 linestyle="none",
             )
     plt.errorbar(
         x=n_range,
-        y=np.array(runtime),
-        yerr=np.array(error),
+        y=runtime,
+        yerr=error,
         fmt="x",
         capsize=5.0,
         linestyle="none",
@@ -472,117 +463,31 @@ def plot_operators_fit_time_against_n_polynomial(
     input()
 
 
-def plot_get_trig_operators_time(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-    size: np.ndarray[tuple[int, int], np.dtype[Any]],
-    n_run: int,
-) -> None:
-    np.random.shuffle(size)
-    nk_pts_length = []
-    config.fit_method = "poly fit"
-    runtime_get_op = []
-    error_get_op = []
-    for s in size:
-        config.shape = (s,)
-        times_get_op = []
-        for n in range(n_run):
-            times = get_operators_fit_time(system, config)
-            times_get_op.append(times[0][1])
-            if (n + 1) % 100 == 0 and n != 0:
-                time.sleep(2.0)
-        avg_time_get_op = np.mean(np.array(times_get_op)).item()
-        runtime_get_op.append(avg_time_get_op)
-        time_err_get_op = np.std(np.array(times_get_op)).item() / np.sqrt(n_run)
-        error_get_op.append(time_err_get_op)
-        nk_pts_length.append(s * config.resolution[0])
-
-    def _runtime_scale(x, a):
-        return a * x
-
-    popt, _ = scipy.optimize.curve_fit(
-        _runtime_scale,
-        size * config.resolution,
-        np.array(runtime_get_op),
-        sigma=np.array(error_get_op),
-    )
-    plt.plot(
-        size * config.resolution,
-        popt[0] * np.array(size * config.resolution),
-        marker="o",
-        label=f"complexity\n"
-        f"{popt[0]/(config.n_polynomial+1)}n_terms"
-        r"\cdot"
-        f"nk_points length",
-        linestyle="none",
-    )
-
-    plt.errorbar(
-        x=(size * config.resolution[0]),
-        y=np.array(runtime_get_op),
-        yerr=np.array(error_get_op),
-        fmt="x",
-        capsize=5.0,
-        linestyle="none",
-        label="get operators",
-    )
-    plt.xlabel("number of states")
-    plt.ylabel("runtime/seconds")
-    plt.title(
-        f"Get trig operators, n = {config.n_polynomial}, fit method = {config.fit_method}\n"
-        f"temperature = {config.temperature}, number of run = {n_run}",
-    )
-    plt.legend()
-    plt.show()
-
-    input()
-
-
 def plot_isotropic_kernel_percentage_error(
     system: PeriodicSystem,
-    config: SimulationConfig,
-    *,
-    base_config: SimulationConfig | None = None,
+    config_list: list[SimulationConfig],
 ) -> None:
-    true_kernel = get_true_noise_kernel(system, config)
-    operators = get_noise_operators(system, config)
-    fitted_kernel = get_diagonal_kernel_from_diagonal_operators(operators)
-    fitted_kernel = as_isotropic_kernel_from_diagonal(
-        fitted_kernel,
-        assert_isotropic=False,
-    )
-    fig, ax, line = plot_isotropic_kernel_error(true_kernel, fitted_kernel)
+    true_kernel = get_true_noise_kernel(system, config_list[0])
+    _, ax, hold_place = plot_isotropic_kernel_error(true_kernel, true_kernel)
+    line: list[Line2D] = [hold_place for _ in range(len(config_list))]
 
-    if base_config is None:
-        base_config = SimulationConfig(
-            shape=config.shape,
-            resolution=config.resolution,
-            n_bands=config.n_bands,
-            type=config.type,
-            temperature=config.temperature,
-            fit_method="fft",
-            n_polynomial=None,
+    for i in range(len(config_list)):
+        operators = get_noise_operators(system, config_list[i])
+        fitted_kernel = get_diagonal_kernel_from_diagonal_operators(operators)
+        fitted_kernel = as_isotropic_kernel_from_diagonal(
+            fitted_kernel,
+            assert_isotropic=True,
+        )
+        fig, _, line[i] = plot_isotropic_kernel_error(true_kernel, fitted_kernel, ax=ax)
+        line[i].set_label(
+            f"fit method = {config_list[i].fit_method}, power of polynomial terms included = {config_list[i].n_polynomial}",
         )
 
-    # to compare the errors between different methods directly
-    base_operators = get_noise_operators(system, base_config)
-    base_kernel = get_diagonal_kernel_from_diagonal_operators(base_operators)
-    base_kernel = as_isotropic_kernel_from_diagonal(
-        base_kernel,
-        assert_isotropic=False,
-    )
-    fig, _, line1 = plot_isotropic_kernel_error(true_kernel, base_kernel, ax=ax)
-    line1.set_label(
-        f"fit method = {base_config.fit_method}, power of polynomial terms included = {base_config.n_polynomial}",
-    )
     ax.set_title(
         "comparison of noise kernel percentage error,\n"
-        f"number of states = {config.shape[0]*config.resolution[0]}",
+        f"number of states = {config_list[0].shape[0]*config_list[0].resolution[0]}",
     )
     ax.set_ylabel("Percentage Error, %")
-    line.set_label(
-        f"fit method = {config.fit_method}, power of polynomial terms included = {config.n_polynomial}",
-    )
     ax.legend()
     fig.show()
     input()
