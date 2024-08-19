@@ -10,12 +10,12 @@ from reduced_state_caldeira_leggett.system import (
 if __name__ == "__main__":
     system = HYDROGEN_NICKEL_SYSTEM
     config = SimulationConfig(
-        shape=(1, 1),
-        resolution=(3, 3),
+        shape=(2, 1),
+        resolution=(4, 3),
         n_bands=9,
         type="bloch",
         temperature=150,
-        fit_method="fft",
+        fit_method="fitted polynomial",
     )
     for i in range(9):
         plot_noise_operators(system, config, idx=i)
