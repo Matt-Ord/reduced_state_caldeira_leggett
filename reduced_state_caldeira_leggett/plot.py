@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import itertools
 import time
 from typing import TYPE_CHECKING, Any, Sequence, cast
 
@@ -363,7 +364,7 @@ def _get_runtime_of_get_operator(
 def plot_operators_fit_time_against_number_of_states(
     system: PeriodicSystem,
     config: SimulationConfig,
-    sizes: np.ndarray[tuple[int], np.dtype[np.int64]],
+    sizes: tuple[np.ndarray[tuple[int], np.dtype[np.int64]]],
     *,
     n_run: int = 100,
 ) -> None:
@@ -373,8 +374,9 @@ def plot_operators_fit_time_against_number_of_states(
 
     """
     configs: list[SimulationConfig] = []
-    for s in sizes:
-        config.shape = (s,)
+    all_sizes = itertools.product(*sizes)
+    for s in all_sizes:
+        config.shape = s
         configs.append(config)
     runtime = _get_runtime_of_get_operator(
         system,
