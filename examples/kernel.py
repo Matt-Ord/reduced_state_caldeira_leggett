@@ -24,17 +24,8 @@ if __name__ == "__main__":
         n_polynomial=6,
     )
 
-    size = np.arange(10, 110, 10)
-    n_run = 10
-    n_range = np.arange(10, 50, 10)
-
-    plot_operators_fit_time_against_n_polynomial(
-        system,
-        config,
-        n_range=n_range,
-        n_run=n_run,
-    )
-    plot_operators_fit_time_against_number_of_states(system, config, size, n_run=n_run)
+    plot_noise_kernel(system, config)
+    plot_noise_operators(system, config, idx=1)
 
     config1 = SimulationConfig(
         shape=config.shape,
@@ -45,10 +36,21 @@ if __name__ == "__main__":
         fit_method="fft",
         n_polynomial=10,
     )
-
     plot_kernel_error_comparison(
         system,
         [config, config1],
     )
-    plot_noise_kernel(system, config)
-    plot_noise_operators(system, config, idx=1)
+
+    plot_operators_fit_time_against_n_polynomial(
+        system,
+        fit_method="fitted polynomial",
+        n_polynomials=np.arange(10, 400, 40),
+        n_run=10,
+    )
+
+    plot_operators_fit_time_against_number_of_states(
+        system,
+        fit_method="fft",
+        n_states=(np.arange(10, 110, 10),),
+        n_run=10,
+    )

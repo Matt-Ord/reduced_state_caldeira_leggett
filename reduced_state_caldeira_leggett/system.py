@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
@@ -433,24 +432,26 @@ def get_noise_operators(
     FundamentalBasis[int],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
+    if config.fit_method == "explicit polynomial":
+        basis = stacked_basis_as_fundamental_position_basis(_get_basis(system, config))
+        a, lambda_ = get_effective_gaussian_parameters(
+            basis,
+            system.eta,
+            config.temperature,
+        )
+        return get_gaussian_operators_explicit_taylor(
+            basis,
+            a,
+            lambda_,
+            n_terms=config.n_polynomial,
+        )
+
     kernel = get_true_noise_kernel(system, config)
     match config.fit_method:
         case "fitted polynomial":
             return get_noise_operators_real_isotropic_taylor_expansion(
                 kernel,
                 n=config.n_polynomial,
-            )
-        case "explicit polynomial":
-            a, lambda_ = get_effective_gaussian_parameters(
-                kernel["basis"],
-                system.eta,
-                config.temperature,
-            )
-            return get_gaussian_operators_explicit_taylor(
-                kernel["basis"],
-                a,
-                lambda_,
-                n_terms=config.n_polynomial,
             )
         case "fft":
             operators = get_noise_operators_real_isotropic_stacked_fft(
@@ -506,52 +507,6 @@ def get_temperature_corrected_noise_operators(
         operators,
         config.temperature,
     )
-
-
-def get_operators_fit_time(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> float:
-    kernel = get_true_noise_kernel(system, config)
-    ts = datetime.datetime.now(tz=datetime.UTC)
-    match config.fit_method:
-        case "fitted polynomial":
-            _operators = get_noise_operators_real_isotropic_taylor_expansion(
-                kernel,
-                n=config.n_polynomial,
-            )
-        case "explicit polynomial":
-            a, lambda_ = get_effective_gaussian_parameters(
-                kernel["basis"],
-                system.eta,
-                config.temperature,
-            )
-            _operators = get_gaussian_operators_explicit_taylor(
-                kernel["basis"],
-                a,
-                lambda_,
-                n_terms=config.n_polynomial,
-            )
-        case "fft":
-            _operators = get_noise_operators_real_isotropic_stacked_fft(
-                kernel,
-            )
-            if config.n_polynomial is not None:
-                _operators = truncate_diagonal_noise_operator_list(
-                    _operators,
-                    range(2 * config.n_polynomial + 1),
-                )
-        case "eigenvalue":
-            _operators = get_noise_operators_diagonal_eigenvalue(
-                as_diagonal_kernel_from_isotropic(kernel),
-            )
-            if config.n_polynomial is not None:
-                _operators = truncate_diagonal_noise_operator_list(
-                    _operators,
-                    range(2 * config.n_polynomial + 1),
-                )
-    te = datetime.datetime.now(tz=datetime.UTC)
-    return (te - ts).total_seconds()
 
 
 def get_initial_state(
