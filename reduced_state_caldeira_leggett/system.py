@@ -432,24 +432,26 @@ def get_noise_operators(
     FundamentalBasis[int],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
+    if config.fit_method == "explicit polynomial":
+        basis = stacked_basis_as_fundamental_position_basis(_get_basis(system, config))
+        a, lambda_ = get_effective_gaussian_parameters(
+            basis,
+            system.eta,
+            config.temperature,
+        )
+        return get_gaussian_operators_explicit_taylor(
+            basis,
+            a,
+            lambda_,
+            n_terms=config.n_polynomial,
+        )
+
     kernel = get_true_noise_kernel(system, config)
     match config.fit_method:
         case "fitted polynomial":
             return get_noise_operators_real_isotropic_taylor_expansion(
                 kernel,
                 n=config.n_polynomial,
-            )
-        case "explicit polynomial":
-            a, lambda_ = get_effective_gaussian_parameters(
-                kernel["basis"],
-                system.eta,
-                config.temperature,
-            )
-            return get_gaussian_operators_explicit_taylor(
-                kernel["basis"],
-                a,
-                lambda_,
-                n_terms=config.n_polynomial,
             )
         case "fft":
             operators = get_noise_operators_real_isotropic_stacked_fft(
@@ -479,7 +481,6 @@ def get_noise_operators(
                 operators,
                 range(2 * config.n_polynomial + 1),
             )
-    return operators
 
 
 def get_noise_kernel(
