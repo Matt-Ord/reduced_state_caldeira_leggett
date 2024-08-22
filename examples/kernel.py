@@ -15,13 +15,13 @@ from reduced_state_caldeira_leggett.system import (
 if __name__ == "__main__":
     system = HYDROGEN_NICKEL_SYSTEM
     config = SimulationConfig(
-        shape=(3,),
+        shape=(2,),
         resolution=(51,),
         n_bands=3,
         type="bloch",
         temperature=150,
-        fit_method="explicit polynomial",
-        n_polynomial=6,
+        fit_method="fitted polynomial",
+        n_polynomial=(6,),
     )
 
     plot_noise_kernel(system, config)
@@ -34,7 +34,7 @@ if __name__ == "__main__":
         type="bloch",
         temperature=150,
         fit_method="fft",
-        n_polynomial=10,
+        n_polynomial=(10,),
     )
     plot_kernel_error_comparison(
         system,

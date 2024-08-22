@@ -29,6 +29,8 @@ from surface_potential_analysis.kernel.build import (
     truncate_diagonal_noise_operator_list,
 )
 from surface_potential_analysis.kernel.gaussian import (
+    get_2d_effective_gaussian_parameters,
+    get_2d_gaussian_isotropic_noise_kernel,
     get_effective_gaussian_parameters,
     get_gaussian_isotropic_noise_kernel,
     get_gaussian_operators_explicit_taylor,
@@ -120,7 +122,7 @@ class SimulationConfig:
     type: Literal["bloch", "wannier"]
     temperature: float
     fit_method: FitMethod = "fft"
-    n_polynomial: int | None = None
+    n_polynomial: tuple[int, ...] | None = None
 
 
 HYDROGEN_NICKEL_SYSTEM = PeriodicSystem(
@@ -443,7 +445,7 @@ def get_noise_operators(
             basis,
             a,
             lambda_,
-            n_terms=config.n_polynomial,
+            n_terms=config.n_polynomial[0],
         )
 
     kernel = get_true_noise_kernel(system, config)
@@ -451,7 +453,7 @@ def get_noise_operators(
         case "fitted polynomial":
             return get_noise_operators_real_isotropic_taylor_expansion(
                 kernel,
-                n=config.n_polynomial,
+                n=config.n_polynomial[0],
             )
         case "fft":
             operators = get_noise_operators_real_isotropic_stacked_fft(
@@ -468,7 +470,7 @@ def get_noise_operators(
                 }
             return truncate_diagonal_noise_operator_list(
                 operators,
-                range(2 * config.n_polynomial + 1),
+                range(2 * config.n_polynomial[0] + 1),
             )
         case "eigenvalue":
             operators = get_noise_operators_diagonal_eigenvalue(
@@ -479,7 +481,7 @@ def get_noise_operators(
                 return operators
             return truncate_diagonal_noise_operator_list(
                 operators,
-                range(2 * config.n_polynomial + 1),
+                range(2 * config.n_polynomial[0] + 1),
             )
 
 
@@ -519,3 +521,81 @@ def get_initial_state(
     data = np.zeros(basis.n, dtype=np.complex128)
     data[0] = 1
     return {"basis": basis, "data": data}
+
+
+def get_2d_true_noise_kernel_separate(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> tuple[
+    IsotropicNoiseKernel[
+        TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
+    ],
+    IsotropicNoiseKernel[
+        TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
+    ],
+]:
+    _x = _get_basis(system, config)[0]
+    _y = _get_basis(system, config)[1]
+    _thing = _get_basis(system, config)
+    basis_x = stacked_basis_as_fundamental_position_basis(TupleBasis(_x))
+    basis_y = stacked_basis_as_fundamental_position_basis(TupleBasis(_y))
+    full_basis = basis_x, basis_y
+    a, lambda_ = get_2d_effective_gaussian_parameters(
+        full_basis,
+        system.eta,
+        config.temperature,
+    )
+    return get_2d_gaussian_isotropic_noise_kernel(full_basis, a, lambda_)
+
+
+def get_2d_true_noise_kernel(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> IsotropicNoiseKernel[
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
+]:
+    kernel_x, kernel_y = get_2d_true_noise_kernel_separate(system, config)
+
+    return {
+        "basis": TupleBasis(kernel_x["basis"], kernel_y["basis"]),
+        "data": np.outer(kernel_x["data"], kernel_y["data"]).ravel(),
+    }
+
+
+def try_2d_noise_op(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> tuple[
+    SingleBasisDiagonalNoiseOperatorList[
+        FundamentalBasis[int],
+        TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...],],
+    ],
+    ...,
+]:
+    kernel_x, kernel_y = get_2d_true_noise_kernel_separate(system, config)
+    operators_x = get_noise_operators_real_isotropic_taylor_expansion(
+        kernel_x,
+        n=config.n_polynomial[0],
+    )
+    operators_y = get_noise_operators_real_isotropic_taylor_expansion(
+        kernel_y,
+        n=config.n_polynomial[1],
+    )
+
+    return (operators_x, operators_y)
+
+
+def get_2d_noise_kernel(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> IsotropicNoiseKernel[
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
+]:
+    operators_x, operators_y = try_2d_noise_op(system, config)
+    kernel_x = get_isotropic_kernel_from_diagonal_operators(operators_x)
+    kernel_y = get_isotropic_kernel_from_diagonal_operators(operators_y)
+
+    return {
+        "basis": TupleBasis(kernel_x["basis"], kernel_y["basis"]),
+        "data": np.outer(kernel_x["data"], kernel_y["data"]).ravel(),
+    }
