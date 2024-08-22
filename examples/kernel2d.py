@@ -17,7 +17,7 @@ if __name__ == "__main__":
         type="bloch",
         temperature=150,
         fit_method="fitted polynomial",
-        n_polynomial=(5, 5),
+        n_polynomial=(50, 60),
     )
     # plot_2d_111_potential(system, config)
     try_plot_2d_kernel(system, config)
