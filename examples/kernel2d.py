@@ -12,12 +12,12 @@ if __name__ == "__main__":
     system = HYDROGEN_NICKEL_SYSTEM
     config = SimulationConfig(
         shape=(3, 3),
-        resolution=(41, 41),
+        resolution=(41, 31),
         n_bands=9,
         type="bloch",
         temperature=150,
         fit_method="fitted polynomial",
-        n_polynomial=(75, 75),
+        n_polynomial=(75, 51),
     )
     try_plot_2d_kernel(system, config)
 

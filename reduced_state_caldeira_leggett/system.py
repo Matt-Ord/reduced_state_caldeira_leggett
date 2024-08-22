@@ -546,6 +546,11 @@ def get_2d_true_noise_kernel_separate(
     return get_2d_gaussian_isotropic_noise_kernel(full_basis, a, lambda_)
 
 
+def _outer_product(*arrays):
+    grids = np.meshgrid(*arrays, indexing="ij")
+    return np.prod(grids, axis=0)
+
+
 def get_2d_true_noise_kernel(
     system: PeriodicSystem,
     config: SimulationConfig,
@@ -560,17 +565,14 @@ def get_2d_true_noise_kernel(
     ] = get_2d_true_noise_kernel_separate(system, config)
     full_basis = tuple(kernel_i["basis"] for kernel_i in kernels)
     full_data = tuple(kernel_i["data"].ravel() for kernel_i in kernels)
-    subscripts = ",".join(chr(105 + i) for i in range(len(kernels)))
-    output_subscript = "".join(chr(105 + i) for i in range(len(kernels)))
-    # eg for 3d "i,j,k->ijk"
 
     return {
         "basis": TupleBasis(*full_basis),
-        "data": np.einsum(f"{subscripts} -> {output_subscript}", *full_data).ravel(),
+        "data": _outer_product(*full_data).ravel(),
     }
 
 
-def try_2d_noise_op(
+def get_2d_noise_op(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> tuple[
@@ -615,7 +617,7 @@ def get_2d_noise_kernel(
             TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
         ],
         ...,
-    ] = try_2d_noise_op(system, config)
+    ] = get_2d_noise_op(system, config)
     kernels: tuple[
         IsotropicNoiseKernel[
             TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
@@ -627,13 +629,8 @@ def get_2d_noise_kernel(
     )
     full_basis = tuple(kernel_i["basis"] for kernel_i in kernels)
     full_data = tuple(kernel_i["data"].ravel() for kernel_i in kernels)
-    subscripts = ",".join(chr(105 + i) for i in range(len(kernels)))
-    output_subscript = "".join(chr(105 + i) for i in range(len(kernels)))
-    # def outer_product(*arrays):
-    #     grids = np.meshgrid(*arrays, indexing='ij')
-    #     return np.prod(grids, axis=0)
 
     return {
         "basis": TupleBasis(*full_basis),
-        "data": np.einsum(f"{subscripts} -> {output_subscript}", *full_data).ravel(),
+        "data": _outer_product(*full_data).ravel(),
     }
