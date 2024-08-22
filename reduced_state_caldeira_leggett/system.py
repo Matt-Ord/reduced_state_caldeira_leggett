@@ -532,12 +532,12 @@ def get_2d_true_noise_kernel_separate(
     ],
     ...,
 ]:
-    _x = _get_basis(system, config)[0]
-    _y = _get_basis(system, config)[1]
-    _thing = _get_basis(system, config)
-    basis_x = stacked_basis_as_fundamental_position_basis(TupleBasis(_x))
-    basis_y = stacked_basis_as_fundamental_position_basis(TupleBasis(_y))
-    full_basis = basis_x, basis_y
+    basis = _get_basis(system, config)
+    full_basis = tuple(
+        stacked_basis_as_fundamental_position_basis(TupleBasis(basis[i]))
+        for i in range(basis.ndim)
+    )
+
     a, lambda_ = get_2d_effective_gaussian_parameters(
         full_basis,
         system.eta,
@@ -562,6 +562,7 @@ def get_2d_true_noise_kernel(
     full_data = tuple(kernel_i["data"].ravel() for kernel_i in kernels)
     subscripts = ",".join(chr(105 + i) for i in range(len(kernels)))
     output_subscript = "".join(chr(105 + i) for i in range(len(kernels)))
+    # eg for 3d "i,j,k->ijk"
 
     return {
         "basis": TupleBasis(*full_basis),
@@ -628,6 +629,9 @@ def get_2d_noise_kernel(
     full_data = tuple(kernel_i["data"].ravel() for kernel_i in kernels)
     subscripts = ",".join(chr(105 + i) for i in range(len(kernels)))
     output_subscript = "".join(chr(105 + i) for i in range(len(kernels)))
+    # def outer_product(*arrays):
+    #     grids = np.meshgrid(*arrays, indexing='ij')
+    #     return np.prod(grids, axis=0)
 
     return {
         "basis": TupleBasis(*full_basis),

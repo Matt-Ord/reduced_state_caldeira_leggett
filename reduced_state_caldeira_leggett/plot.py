@@ -589,6 +589,27 @@ def try_plot_2d_kernel(
     kernel_fitted = get_2d_noise_kernel(system, config)
 
     for i in range(len(config.shape)):
+        fig, ax, line1 = plot_isotropic_noise_kernel_1d_x(kernel_real, axes=(i,))
+        line1.set_label("actual noise")
+        fig.show()
+
+        fig, _, line2 = plot_isotropic_noise_kernel_1d_x(
+            kernel_fitted,
+            axes=(i,),
+            ax=ax,
+        )
+        line2.set_linestyle("--")
+        line2.set_label("fitted noise")
+
+        ax.set_title(
+            f"noise kernel, fit method = {config.fit_method}, "
+            f"n = {config.n_polynomial}, "
+            f"temperature = {config.temperature}",
+        )
+        ax.legend()
+        fig.show()
+
+    for i in range(len(config.shape)):
         for j in range(i + 1, len(config.shape)):
             fig, ax, line1 = plot_isotropic_noise_kernel_2d_x(kernel_real, axes=(i, j))
             line1.set_label("actual noise")
