@@ -30,14 +30,15 @@ from surface_potential_analysis.kernel.build import (
 )
 from surface_potential_analysis.kernel.gaussian import (
     get_2d_effective_gaussian_parameters,
-    get_effective_gaussian_parameters,
     get_gaussian_operators_explicit_taylor,
     get_separate_gaussian_isotropic_noise_kernel,
 )
 from surface_potential_analysis.kernel.kernel import (
     IsotropicNoiseKernel,
     as_diagonal_kernel_from_isotropic,
+    get_full_kernel_from_independent,
     get_isotropic_kernel_from_diagonal_operators,
+    outer_product,
 )
 from surface_potential_analysis.kernel.solve import (
     get_noise_operators_diagonal_eigenvalue,
@@ -427,12 +428,11 @@ def get_true_noise_kernel(
         ],
         ...,
     ] = get_true_noise_kernel_separate(system, config)
-    full_basis = tuple(kernel_i["basis"] for kernel_i in kernels)
-    full_data = tuple(kernel_i["data"].ravel() for kernel_i in kernels)
+    full_isotropic_kernel = get_full_kernel_from_independent(kernels)
 
     return {
-        "basis": TupleBasis(*full_basis),
-        "data": _outer_product(*full_data).ravel(),
+        "basis": full_isotropic_kernel["basis"],
+        "data": full_isotropic_kernel["data"],
     }
 
 
@@ -446,19 +446,41 @@ def get_noise_operators(
     ],
     ...,
 ]:
-    # now poly fit working for general dimension
+    # now poly fit and explicit fit working for general dimension
     if config.fit_method == "explicit polynomial":
-        basis = stacked_basis_as_fundamental_position_basis(_get_basis(system, config))
-        a, lambda_ = get_effective_gaussian_parameters(
-            basis,
+        basis = _get_basis(system, config)
+        full_basis = tuple(
+            stacked_basis_as_fundamental_position_basis(TupleBasis(basis[i]))
+            for i in range(basis.ndim)
+        )
+
+        a, lambda_ = get_2d_effective_gaussian_parameters(
+            full_basis,
             system.eta,
             config.temperature,
         )
-        return get_gaussian_operators_explicit_taylor(
-            basis,
-            a,
-            lambda_,
-            n_terms=config.n_polynomial[0],
+        operators_list = tuple(
+            get_gaussian_operators_explicit_taylor(
+                full_basis[i],
+                a,
+                lambda_,
+                n_terms=config.n_polynomial[i],
+            )
+            for i in range(len(config.shape))
+        )
+        return tuple(
+            {
+                "basis": TupleBasis(
+                    FundamentalBasis(operators["basis"][0].n),
+                    TupleBasis(
+                        operators["basis"][1][0][0],
+                        operators["basis"][1][0][0],
+                    ),
+                ),
+                "data": operators["data"],
+                "eigenvalue": operators["eigenvalue"],
+            }
+            for operators in operators_list
         )
 
     kernels: tuple[
@@ -544,12 +566,11 @@ def get_noise_kernel(
         get_isotropic_kernel_from_diagonal_operators(operators)
         for operators in operators_list
     )
-    full_basis = tuple(kernel_i["basis"] for kernel_i in kernels)
-    full_data = tuple(kernel_i["data"].ravel() for kernel_i in kernels)
+    full_isotropic_kernel = get_full_kernel_from_independent(kernels)
 
     return {
-        "basis": TupleBasis(*full_basis),
-        "data": _outer_product(*full_data).ravel(),
+        "basis": full_isotropic_kernel["basis"],
+        "data": full_isotropic_kernel["data"],
     }
 
 
@@ -604,11 +625,6 @@ def get_true_noise_kernel_separate(
     return get_separate_gaussian_isotropic_noise_kernel(full_basis, a, lambda_)
 
 
-def _outer_product(*arrays):
-    grids = np.meshgrid(*arrays, indexing="ij")
-    return np.prod(grids, axis=0)
-
-
 def get_full_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
@@ -642,5 +658,5 @@ def get_full_noise_operators(
     return {
         "basis": TupleBasis(full_basis_shape, TupleBasis(full_basis_x, full_basis_x)),
         "data": np.einsum(einsum_string, *full_data).ravel(),
-        "eigenvalue": _outer_product(*full_coefficients).ravel(),
+        "eigenvalue": outer_product(*full_coefficients).ravel(),
     }
