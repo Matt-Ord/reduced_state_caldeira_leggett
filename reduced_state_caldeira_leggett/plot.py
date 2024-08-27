@@ -57,8 +57,7 @@ from reduced_state_caldeira_leggett.system import (
     FitMethod,
     PeriodicSystem,
     SimulationConfig,
-    get_2d_noise_kernel,
-    get_2d_true_noise_kernel,
+    get_full_noise_operators,
     get_hamiltonian,
     get_noise_kernel,
     get_noise_operators,
@@ -243,7 +242,7 @@ def plot_noise_operators(
     idx: SingleFlatIndexLike = 0,
 ) -> None:
     """Plot the noise operators generated."""
-    operators = get_noise_operators(system, config)
+    operators = get_full_noise_operators(system, config)
     operator = select_diagonal_operator(operators, idx=idx)
 
     for i in range(len(config.shape)):
@@ -577,55 +576,5 @@ def plot_kernel_error_comparison(
     ax.set_ylabel("Percentage Error, %")
     ax.legend()
     fig.show()
-
-    input()
-
-
-def try_plot_2d_kernel(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> None:
-    kernel_real = get_2d_true_noise_kernel(system, config)
-    kernel_fitted = get_2d_noise_kernel(system, config)
-
-    for i in range(len(config.shape)):
-        fig, ax, line1 = plot_isotropic_noise_kernel_1d_x(kernel_real, axes=(i,))
-        line1.set_label("actual noise")
-        fig.show()
-
-        fig, _, line2 = plot_isotropic_noise_kernel_1d_x(
-            kernel_fitted,
-            axes=(i,),
-            ax=ax,
-        )
-        line2.set_linestyle("--")
-        line2.set_label("fitted noise")
-
-        ax.set_title(
-            f"noise kernel, fit method = {config.fit_method}, "
-            f"n = {config.n_polynomial}, "
-            f"temperature = {config.temperature}",
-        )
-        ax.legend()
-        fig.show()
-
-    for i in range(len(config.shape)):
-        for j in range(i + 1, len(config.shape)):
-            fig, ax, line1 = plot_isotropic_noise_kernel_2d_x(kernel_real, axes=(i, j))
-            line1.set_label("actual noise")
-            fig.show()
-
-            ax.set_title("True kernel in 2d")
-
-            fig, ax, line2 = plot_isotropic_noise_kernel_2d_x(
-                kernel_fitted,
-                axes=(i, j),
-            )
-            line2.set_linestyle("--")
-            line2.set_label("fitted noise")
-
-            ax.set_title("Fitted kernel in 2d")
-            ax.legend()
-            fig.show()
 
     input()
