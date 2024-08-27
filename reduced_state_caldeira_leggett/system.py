@@ -622,10 +622,9 @@ def get_2d_noise_op_full(
         TupleBasis(FundamentalBasis(basis_shape.n), basis_x)
         for basis_shape, basis_x in zip(full_basis_shape, full_basis_x)
     )
-    subscripts_list = [chr(ord("i") + i) for i in range(len(operators_list) ** 2)]
+    subscripts_list = [chr(ord("i") + i) for i in range(len(operators_list) * 2)]
     subscripts_list = [
-        subscripts_list[i : (i + len(operators_list))]
-        for i in range(0, len(operators_list) ** 2, len(operators_list))
+        subscripts_list[i : (i + 2)] for i in range(0, len(operators_list) * 2, 2)
     ]
     input_subscripts = ",".join(["".join(subscripts) for subscripts in subscripts_list])
     output_subscript = "".join("".join(group) for group in list(zip(*subscripts_list)))
