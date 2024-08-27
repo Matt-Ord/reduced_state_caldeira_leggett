@@ -71,6 +71,7 @@ from surface_potential_analysis.wavepacket.wavepacket import (
 )
 
 if TYPE_CHECKING:
+    from surface_potential_analysis.basis.basis_like import BasisLike
     from surface_potential_analysis.basis.explicit_basis import (
         ExplicitStackedBasisWithLength,
     )
@@ -79,6 +80,9 @@ if TYPE_CHECKING:
         SingleBasisNoiseOperatorList,
     )
     from surface_potential_analysis.operator.operator import SingleBasisOperator
+    from surface_potential_analysis.operator.operator_list import (
+        SingleBasisDiagonalOperatorList,
+    )
     from surface_potential_analysis.potential.potential import Potential
     from surface_potential_analysis.state_vector.state_vector import StateVector
     from surface_potential_analysis.wavepacket.localization_operator import (
@@ -572,7 +576,7 @@ def get_2d_true_noise_kernel(
     }
 
 
-def get_2d_noise_op(
+def get_2d_noise_op_separate(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> tuple[
@@ -588,21 +592,54 @@ def get_2d_noise_op(
         ],
         ...,
     ] = get_2d_true_noise_kernel_separate(system, config)
+    match config.fit_method:
+        case "fitted polynomial":
+            return tuple(
+                get_noise_operators_real_isotropic_taylor_expansion(
+                    kernels[i],
+                    n=config.n_polynomial[i],
+                )
+                for i in range(len(kernels))
+            )
+        case _:
+            return None
+
+
+def get_2d_noise_op_full(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> SingleBasisDiagonalOperatorList[FundamentalBasis[int], BasisLike[int, int]]:
     operators_list: tuple[
         SingleBasisDiagonalNoiseOperatorList[
             FundamentalBasis[int],
-            FundamentalPositionBasis[Any, Literal[1]],
+            TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
         ],
         ...,
-    ] = tuple(
-        get_noise_operators_real_isotropic_taylor_expansion(
-            kernels[i],
-            n=config.n_polynomial[i],
-        )
-        for i in range(len(kernels))
+    ] = get_2d_noise_op_separate(system, config)
+    full_basis_shape = tuple(operators["basis"][0] for operators in operators_list)
+    full_basis_x = tuple(operators["basis"][1] for operators in operators_list)
+    full_basis = tuple(
+        TupleBasis(FundamentalBasis(basis_shape.n), basis_x)
+        for basis_shape, basis_x in zip(full_basis_shape, full_basis_x)
     )
+    subscripts_list = [chr(ord("i") + i) for i in range(len(operators_list) ** 2)]
+    subscripts_list = [
+        subscripts_list[i : (i + len(operators_list))]
+        for i in range(0, len(operators_list) ** 2, len(operators_list))
+    ]
+    input_subscripts = ",".join(["".join(subscripts) for subscripts in subscripts_list])
+    output_subscript = "".join("".join(group) for group in list(zip(*subscripts_list)))
+    einsum_string = f"{input_subscripts}->{output_subscript}"
 
-    return operators_list
+    full_data = tuple(operators["data"] for operators in operators_list)
+    full_coefficients = tuple(
+        operators["eigenvalue"].ravel() for operators in operators_list
+    )
+    return {
+        "basis": TupleBasis(*full_basis),
+        "data": np.einsum(einsum_string, *full_data).ravel(),
+        "eigenvalue": _outer_product(*full_coefficients).ravel(),
+    }
 
 
 def get_2d_noise_kernel(
@@ -617,7 +654,15 @@ def get_2d_noise_kernel(
             TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
         ],
         ...,
-    ] = get_2d_noise_op(system, config)
+    ] = get_2d_noise_op_separate(system, config)
+    operators_list = tuple(
+        {
+            "basis": operators["basis"],
+            "data": operators["data"].ravel(),
+            "eigenvalue": operators["eigenvalue"],
+        }
+        for operators in operators_list
+    )
     kernels: tuple[
         IsotropicNoiseKernel[
             TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
