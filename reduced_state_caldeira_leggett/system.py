@@ -423,10 +423,7 @@ def get_true_noise_kernel(
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
 ]:
     kernels: tuple[
-        IsotropicNoiseKernel[
-            TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
-        ],
-        ...,
+        IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]], ...
     ] = get_true_noise_kernel_separate(system, config)
     full_isotropic_kernel = get_full_kernel_from_independent(kernels)
 
@@ -442,7 +439,7 @@ def get_noise_operators(
 ) -> tuple[
     SingleBasisDiagonalNoiseOperatorList[
         FundamentalBasis[int],
-        TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...],],
+        FundamentalPositionBasis[Any, Literal[1]],
     ],
     ...,
 ]:
@@ -483,20 +480,10 @@ def get_noise_operators(
             for operators in operators_list
         )
 
-    kernels: tuple[
-        IsotropicNoiseKernel[
-            TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
-        ],
-        ...,
-    ] = get_true_noise_kernel_separate(system, config)
     match config.fit_method:
         case "fitted polynomial":
             kernels: tuple[
-                IsotropicNoiseKernel[
-                    TupleBasisWithLengthLike[
-                        *tuple[FundamentalPositionBasis[Any, Any], ...]
-                    ],
-                ],
+                IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]],
                 ...,
             ] = get_true_noise_kernel_separate(system, config)
             return tuple(
@@ -545,7 +532,7 @@ def get_noise_kernel(
     operators_list: tuple[
         SingleBasisDiagonalNoiseOperatorList[
             FundamentalBasis[int],
-            TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
+            FundamentalPositionBasis[Any, Literal[1]],
         ],
         ...,
     ] = get_noise_operators(system, config)
@@ -558,9 +545,7 @@ def get_noise_kernel(
         for operators in operators_list
     )
     kernels: tuple[
-        IsotropicNoiseKernel[
-            TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
-        ],
+        IsotropicNoiseKernel[FundamentalPositionBasis[Any, Literal[1]]],
         ...,
     ] = tuple(
         get_isotropic_kernel_from_diagonal_operators(operators)
@@ -605,12 +590,7 @@ def get_initial_state(
 def get_true_noise_kernel_separate(
     system: PeriodicSystem,
     config: SimulationConfig,
-) -> tuple[
-    IsotropicNoiseKernel[
-        TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
-    ],
-    ...,
-]:
+) -> tuple[IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]], ...]:
     basis = _get_basis(system, config)
     full_basis = tuple(
         stacked_basis_as_fundamental_position_basis(TupleBasis(basis[i]))
@@ -632,7 +612,7 @@ def get_full_noise_operators(
     operators_list: tuple[
         SingleBasisDiagonalNoiseOperatorList[
             FundamentalBasis[int],
-            TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
+            FundamentalPositionBasis[Any, Literal[1]],
         ],
         ...,
     ] = get_noise_operators(system, config)
