@@ -30,20 +30,19 @@ from surface_potential_analysis.kernel.build import (
 )
 from surface_potential_analysis.kernel.gaussian import (
     get_2d_effective_gaussian_parameters,
-    get_gaussian_operators_explicit_taylor,
-    get_separate_gaussian_isotropic_noise_kernel,
+    get_axis_gaussian_isotropic_noise_kernels,
+    get_stacked_gaussian_isotropic_noise_kernels,
+    get_stacked_gaussian_operators_explicit_taylor,
 )
 from surface_potential_analysis.kernel.kernel import (
     IsotropicNoiseKernel,
     as_diagonal_kernel_from_isotropic,
-    get_full_kernel_from_independent,
     get_isotropic_kernel_from_diagonal_operators,
-    outer_product,
 )
 from surface_potential_analysis.kernel.solve import (
     get_noise_operators_diagonal_eigenvalue,
     get_noise_operators_real_isotropic_stacked_fft,
-    get_noise_operators_real_isotropic_taylor_expansion,
+    get_stacked_noise_operators_real_isotropic_taylor_expansion,
 )
 from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.potential.conversion import (
@@ -71,7 +70,6 @@ from surface_potential_analysis.wavepacket.wavepacket import (
 )
 
 if TYPE_CHECKING:
-    from surface_potential_analysis.basis.basis_like import BasisLike
     from surface_potential_analysis.basis.explicit_basis import (
         ExplicitStackedBasisWithLength,
     )
@@ -80,9 +78,6 @@ if TYPE_CHECKING:
         SingleBasisNoiseOperatorList,
     )
     from surface_potential_analysis.operator.operator import SingleBasisOperator
-    from surface_potential_analysis.operator.operator_list import (
-        SingleBasisDiagonalOperatorList,
-    )
     from surface_potential_analysis.potential.potential import Potential
     from surface_potential_analysis.state_vector.state_vector import StateVector
     from surface_potential_analysis.wavepacket.localization_operator import (
@@ -416,34 +411,43 @@ def get_hamiltonian(
     return get_full_wannier_hamiltonian(wavefunctions, operator)
 
 
+def get_axis_true_noise_kernels(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+) -> tuple[IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]], ...]:
+    basis = _get_basis(system, config)
+    full_basis = tuple(
+        stacked_basis_as_fundamental_position_basis(TupleBasis(basis[i]))
+        for i in range(basis.ndim)
+    )
+
+    a, lambda_ = get_2d_effective_gaussian_parameters(
+        full_basis,
+        system.eta,
+        config.temperature,
+    )
+    return get_axis_gaussian_isotropic_noise_kernels(full_basis, a, lambda_)
+
+
 def get_true_noise_kernel(
     system: PeriodicSystem,
     config: SimulationConfig,
-) -> IsotropicNoiseKernel[
-    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
-]:
+) -> IsotropicNoiseKernel[TupleBasis[*tuple[FundamentalPositionBasis[Any, Any]]]]:
     kernels: tuple[
-        IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]], ...
-    ] = get_true_noise_kernel_separate(system, config)
-    full_isotropic_kernel = get_full_kernel_from_independent(kernels)
-
-    return {
-        "basis": full_isotropic_kernel["basis"],
-        "data": full_isotropic_kernel["data"],
-    }
+        IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]],
+        ...,
+    ] = get_axis_true_noise_kernels(system, config)
+    return get_stacked_gaussian_isotropic_noise_kernels(kernels)
 
 
 def get_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
-) -> tuple[
-    SingleBasisDiagonalNoiseOperatorList[
-        FundamentalBasis[int],
-        FundamentalPositionBasis[Any, Literal[1]],
-    ],
-    ...,
+) -> SingleBasisDiagonalNoiseOperatorList[
+    FundamentalBasis[int],
+    FundamentalPositionBasis[Any, Literal[1]],
 ]:
-    # now poly fit and explicit fit working for general dimension
+    kernel = get_true_noise_kernel(system, config)
     if config.fit_method == "explicit polynomial":
         basis = _get_basis(system, config)
         full_basis = tuple(
@@ -456,42 +460,18 @@ def get_noise_operators(
             system.eta,
             config.temperature,
         )
-        operators_list = tuple(
-            get_gaussian_operators_explicit_taylor(
-                full_basis[i],
-                a,
-                lambda_,
-                n_terms=config.n_polynomial[i],
-            )
-            for i in range(len(config.shape))
+        return get_stacked_gaussian_operators_explicit_taylor(
+            kernel,
+            full_basis,
+            a,
+            lambda_,
+            n_terms=config.n_polynomial,
         )
-        return tuple(
-            {
-                "basis": TupleBasis(
-                    FundamentalBasis(operators["basis"][0].n),
-                    TupleBasis(
-                        operators["basis"][1][0][0],
-                        operators["basis"][1][0][0],
-                    ),
-                ),
-                "data": operators["data"],
-                "eigenvalue": operators["eigenvalue"],
-            }
-            for operators in operators_list
-        )
-
     match config.fit_method:
         case "fitted polynomial":
-            kernels: tuple[
-                IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]],
-                ...,
-            ] = get_true_noise_kernel_separate(system, config)
-            return tuple(
-                get_noise_operators_real_isotropic_taylor_expansion(
-                    kernels[i],
-                    n=config.n_polynomial[i],
-                )
-                for i in range(len(kernels))
+            return get_stacked_noise_operators_real_isotropic_taylor_expansion(
+                kernel,
+                n=config.n_polynomial,
             )
         case "fft":
             operators = get_noise_operators_real_isotropic_stacked_fft(
@@ -503,13 +483,18 @@ def get_noise_operators(
                         FundamentalBasis(operators["basis"][0].n),
                         operators["basis"][1],
                     ),
-                    "data": operators["data"],
-                    "eigenvalue": operators["eigenvalue"],
+                    "data": operators["data"].ravel(),
+                    "eigenvalue": operators["eigenvalue"].ravel(),
                 }
-            return truncate_diagonal_noise_operator_list(
+            truncated_operators = truncate_diagonal_noise_operator_list(
                 operators,
                 range(2 * config.n_polynomial[0] + 1),
             )
+            return {
+                "basis": truncated_operators["basis"],
+                "data": truncated_operators["data"].ravel(),
+                "eigenvalue": truncated_operators["eigenvalue"].ravel(),
+            }
         case "eigenvalue":
             operators = get_noise_operators_diagonal_eigenvalue(
                 as_diagonal_kernel_from_isotropic(kernel),
@@ -517,10 +502,15 @@ def get_noise_operators(
 
             if config.n_polynomial is None:
                 return operators
-            return truncate_diagonal_noise_operator_list(
+            truncated_operators = truncate_diagonal_noise_operator_list(
                 operators,
                 range(2 * config.n_polynomial[0] + 1),
             )
+            return {
+                "basis": truncated_operators["basis"],
+                "data": truncated_operators["data"].ravel(),
+                "eigenvalue": truncated_operators["eigenvalue"].ravel(),
+            }
 
 
 def get_noise_kernel(
@@ -529,34 +519,11 @@ def get_noise_kernel(
 ) -> IsotropicNoiseKernel[
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
 ]:
-    operators_list: tuple[
-        SingleBasisDiagonalNoiseOperatorList[
-            FundamentalBasis[int],
-            FundamentalPositionBasis[Any, Literal[1]],
-        ],
-        ...,
-    ] = get_noise_operators(system, config)
-    operators_list = tuple(
-        {
-            "basis": operators["basis"],
-            "data": operators["data"].ravel(),
-            "eigenvalue": operators["eigenvalue"],
-        }
-        for operators in operators_list
+    operators = get_noise_operators(system, config)
+    return get_isotropic_kernel_from_diagonal_operators(
+        operators,
+        assert_isotropic=False,
     )
-    kernels: tuple[
-        IsotropicNoiseKernel[FundamentalPositionBasis[Any, Literal[1]]],
-        ...,
-    ] = tuple(
-        get_isotropic_kernel_from_diagonal_operators(operators)
-        for operators in operators_list
-    )
-    full_isotropic_kernel = get_full_kernel_from_independent(kernels)
-
-    return {
-        "basis": full_isotropic_kernel["basis"],
-        "data": full_isotropic_kernel["data"],
-    }
 
 
 def get_temperature_corrected_noise_operators(
@@ -585,58 +552,3 @@ def get_initial_state(
     data = np.zeros(basis.n, dtype=np.complex128)
     data[0] = 1
     return {"basis": basis, "data": data}
-
-
-def get_true_noise_kernel_separate(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> tuple[IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]], ...]:
-    basis = _get_basis(system, config)
-    full_basis = tuple(
-        stacked_basis_as_fundamental_position_basis(TupleBasis(basis[i]))
-        for i in range(basis.ndim)
-    )
-
-    a, lambda_ = get_2d_effective_gaussian_parameters(
-        full_basis,
-        system.eta,
-        config.temperature,
-    )
-    return get_separate_gaussian_isotropic_noise_kernel(full_basis, a, lambda_)
-
-
-def get_full_noise_operators(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> SingleBasisDiagonalOperatorList[FundamentalBasis[int], BasisLike[int, int]]:
-    operators_list: tuple[
-        SingleBasisDiagonalNoiseOperatorList[
-            FundamentalBasis[int],
-            FundamentalPositionBasis[Any, Literal[1]],
-        ],
-        ...,
-    ] = get_noise_operators(system, config)
-    full_basis_shape = TupleBasis(
-        *tuple(operators["basis"][0] for operators in operators_list),
-    )
-    full_basis_x = TupleBasis(
-        *tuple(operators["basis"][1][0] for operators in operators_list),
-    )
-
-    subscripts_list = [chr(ord("i") + i) for i in range(len(operators_list) * 2)]
-    subscripts_list = [
-        subscripts_list[i : (i + 2)] for i in range(0, len(operators_list) * 2, 2)
-    ]
-    input_subscripts = ",".join(["".join(subscripts) for subscripts in subscripts_list])
-    output_subscript = "".join("".join(group) for group in list(zip(*subscripts_list)))
-    einsum_string = f"{input_subscripts}->{output_subscript}"
-
-    full_data = tuple(operators["data"] for operators in operators_list)
-    full_coefficients = tuple(
-        operators["eigenvalue"].ravel() for operators in operators_list
-    )
-    return {
-        "basis": TupleBasis(full_basis_shape, TupleBasis(full_basis_x, full_basis_x)),
-        "data": np.einsum(einsum_string, *full_data).ravel(),
-        "eigenvalue": outer_product(*full_coefficients).ravel(),
-    }

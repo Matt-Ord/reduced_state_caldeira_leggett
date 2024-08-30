@@ -57,7 +57,6 @@ from reduced_state_caldeira_leggett.system import (
     FitMethod,
     PeriodicSystem,
     SimulationConfig,
-    get_full_noise_operators,
     get_hamiltonian,
     get_noise_kernel,
     get_noise_operators,
@@ -242,7 +241,7 @@ def plot_noise_operators(
     idx: SingleFlatIndexLike = 0,
 ) -> None:
     """Plot the noise operators generated."""
-    operators = get_full_noise_operators(system, config)
+    operators = get_noise_operators(system, config)
     operator = select_diagonal_operator(operators, idx=idx)
 
     for i in range(len(config.shape)):
@@ -276,6 +275,7 @@ def plot_noise_kernel(
     True kernel and the fitted kernel compared.
     """
     kernel_real = get_true_noise_kernel(system, config)
+    kernel_real = {"basis": kernel_real["basis"], "data": kernel_real["data"].ravel()}
     kernel_fitted = get_noise_kernel(system, config)
 
     for i in range(len(config.shape)):

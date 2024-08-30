@@ -15,9 +15,15 @@ if __name__ == "__main__":
         n_bands=9,
         type="bloch",
         temperature=150,
-        fit_method="explicit polynomial",
-        n_polynomial=(5, 3),
+        fit_method="fft",
+        n_polynomial=(3, 4),
     )
+
     plot_noise_kernel(system, config)
+
+    print("here")
+
     for i in range(9):
         plot_noise_operators(system, config, idx=i)
+
+    print("here again")
