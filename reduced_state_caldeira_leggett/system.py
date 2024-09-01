@@ -461,17 +461,14 @@ def get_noise_operators(
             operators = get_noise_operators_real_isotropic_stacked_fft(
                 kernel,
             )
+
             if config.n_polynomial is None:
                 return operators
-            truncated_operators = truncate_diagonal_noise_operator_list(
+            return truncate_diagonal_noise_operator_list(
                 operators,
                 range(2 * config.n_polynomial[0] + 1),
             )
-            return {
-                "basis": truncated_operators["basis"],
-                "data": truncated_operators["data"].ravel(),
-                "eigenvalue": truncated_operators["eigenvalue"].ravel(),
-            }
+
         case "eigenvalue":
             operators = get_noise_operators_diagonal_eigenvalue(
                 as_diagonal_kernel_from_isotropic(kernel),
@@ -479,15 +476,10 @@ def get_noise_operators(
 
             if config.n_polynomial is None:
                 return operators
-            truncated_operators = truncate_diagonal_noise_operator_list(
+            return truncate_diagonal_noise_operator_list(
                 operators,
                 range(2 * config.n_polynomial[0] + 1),
             )
-            return {
-                "basis": truncated_operators["basis"],
-                "data": truncated_operators["data"].ravel(),
-                "eigenvalue": truncated_operators["eigenvalue"].ravel(),
-            }
 
 
 def get_noise_kernel(
