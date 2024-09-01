@@ -7,19 +7,19 @@ import numpy as np
 import scipy
 import scipy.optimize
 from matplotlib import pyplot as plt
+from matplotlib.lines import Line2D
 from surface_potential_analysis.basis.basis import FundamentalBasis
 from surface_potential_analysis.kernel.kernel import (
     as_diagonal_kernel_from_full,
     as_diagonal_kernel_from_isotropic,
     as_full_kernel_from_diagonal,
-    as_isotropic_kernel_from_diagonal,
     get_diagonal_kernel_from_diagonal_operators,
     get_full_kernel_from_operators,
 )
 from surface_potential_analysis.kernel.plot import (
     plot_diagonal_kernel_2d,
     plot_diagonal_kernel_truncation_error,
-    plot_isotropic_kernel_error,
+    plot_isotropic_kernel_error_1d_x,
     plot_isotropic_noise_kernel_1d_x,
     plot_isotropic_noise_kernel_2d_x,
     plot_kernel_2d,
@@ -66,6 +66,8 @@ from reduced_state_caldeira_leggett.system import (
 )
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
     from surface_potential_analysis.state_vector.eigenstate_list import (
         StatisticalValueList,
     )
@@ -304,7 +306,7 @@ def plot_noise_kernel(
             line1.set_label("actual noise")
             fig.show()
 
-            ax.set_title("True kernel in 2d")
+            ax.set_title("True kernel in 2d")  # type: ignore lib type
 
             fig, ax, line2 = plot_isotropic_noise_kernel_2d_x(
                 kernel_fitted,
@@ -313,14 +315,14 @@ def plot_noise_kernel(
             line2.set_linestyle("--")
             line2.set_label("fitted noise")
 
-            ax.set_title("Fitted kernel in 2d")
-            ax.legend()
+            ax.set_title("Fitted kernel in 2d")  # type: ignore lib type
+            ax.legend()  # type: ignore lib type
             fig.show()
 
     operators = get_noise_operators(system, config)
     diagonal = get_diagonal_kernel_from_diagonal_operators(operators)
     fig, ax, _ = plot_diagonal_kernel_2d(diagonal)
-    ax.set_title("Full noise kernel")
+    ax.set_title("Full noise kernel")  # type: ignore lib type
     fig.show()
 
     input()
@@ -394,7 +396,7 @@ def plot_operators_fit_time_against_number_of_states(
             n_bands=n_state,
             type="bloch",
             temperature=0,
-            n_polynomial=n_polynomial,
+            n_polynomial=(n_polynomial,),
         )
         for n_state in n_states[0]
     ]
@@ -429,14 +431,14 @@ def plot_operators_fit_time_against_number_of_states(
 
     popt, _ = cast(
         tuple[np.ndarray[tuple[int], np.dtype[np.float64]], Any],
-        scipy.optimize.curve_fit(
+        scipy.optimize.curve_fit(  # type: ignore lib type
             _get_complexity,
             n_states[0],
             runtime["data"],
             sigma=runtime["standard_deviation"],
         ),
     )
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots()  # type: ignore lib type
     ax.plot(
         n_states[0],
         _get_complexity(n_states[0].astype(np.float64), popt[0]),
@@ -514,7 +516,7 @@ def plot_operators_fit_time_against_n_polynomial(
 
     parameters, _ = cast(
         tuple[np.ndarray[tuple[int], np.dtype[np.float64]], Any],
-        scipy.optimize.curve_fit(
+        scipy.optimize.curve_fit(  # type: ignore lib type
             _get_complexity,
             n_polynomials,
             runtime["data"],
@@ -522,12 +524,12 @@ def plot_operators_fit_time_against_n_polynomial(
         ),
     )
     fig, ax = get_figure(None)
-    ax.plot(
+    ax.plot(  # type: ignore lib type
         n_polynomials,
         _get_complexity(n_polynomials.astype(float), *parameters),
         label=_get_complexity_label(*parameters),
     )
-    ax.errorbar(
+    ax.errorbar(  # type: ignore lib type
         x=n_polynomials,
         y=runtime["data"],
         yerr=runtime["standard_deviation"],
@@ -536,44 +538,54 @@ def plot_operators_fit_time_against_n_polynomial(
         linestyle="none",
         label="Runtime",
     )
-    ax.set_xlabel("n terms")
-    ax.set_ylabel("runtime/seconds")
-    ax.set_title(
+    ax.set_xlabel("n terms")  # type: ignore lib type
+    ax.set_ylabel("runtime/seconds")  # type: ignore lib type
+    ax.set_title(  # type: ignore lib type
         f"{fit_method} method with {n_states} states,\naveraged over {n_run} runs",
     )
-    ax.legend()
+    ax.legend()  # type: ignore lib type
     fig.show()
 
     input()
 
 
-def plot_kernel_error_comparison(
+def plot_noise_kernel_error_1d(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+    *,
+    ax: Axes | None = None,
+) -> tuple[Figure, Axes, Line2D]:
+    fig, ax = get_figure(ax)
+
+    true_kernel = get_true_noise_kernel(system, config)
+    fitted_kernel = get_noise_kernel(system, config)
+
+    fig, _, line = plot_isotropic_kernel_error_1d_x(true_kernel, fitted_kernel, ax=ax)
+    line.set_label(
+        f"{config.fit_method} method, {config.n_polynomial} terms",
+    )
+
+    ax.set_ylabel("Percentage Error, %")  # type: ignore lib type
+
+    return fig, ax, line
+
+
+def plot_noise_kernel_error_comparison(
     system: PeriodicSystem,
     configs: Sequence[SimulationConfig],
 ) -> None:
     fig, ax = get_figure(None)
-    lines = []
+    lines = list[Line2D]()
 
     for config in configs:
-        true_kernel = get_true_noise_kernel(system, config)
-        operators = get_noise_operators(system, config)
-        fitted_kernel = get_diagonal_kernel_from_diagonal_operators(operators)
-        fitted_kernel = as_isotropic_kernel_from_diagonal(
-            fitted_kernel,
-            assert_isotropic=True,
-        )
-        fig, _, line = plot_isotropic_kernel_error(true_kernel, fitted_kernel, ax=ax)
-        line.set_label(
-            f"{config.fit_method} method, {config.n_polynomial} terms",
-        )
+        _, _, line = plot_noise_kernel_error_1d(system, config, ax=ax)
         lines.append(line)
 
-    ax.set_title(
+    ax.set_title(  # type: ignore lib type
         "Comparison of noise kernel percentage error,\n"
-        f"with {configs[0].shape[0]*configs[0].resolution[0]} states",
+        f"with {configs[0].shape[0] * configs[0].resolution[0]} states",
     )
-    ax.set_ylabel("Percentage Error, %")
-    ax.legend()
+    ax.legend()  # type: ignore lib type
     fig.show()
 
     input()

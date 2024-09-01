@@ -31,17 +31,19 @@ from surface_potential_analysis.kernel.build import (
 from surface_potential_analysis.kernel.gaussian import (
     get_effective_gaussian_parameters,
     get_gaussian_isotropic_noise_kernel,
-    get_gaussian_operators_explicit_taylor,
+    get_gaussian_operators_explicit_taylor_stacked,
 )
 from surface_potential_analysis.kernel.kernel import (
     IsotropicNoiseKernel,
     as_diagonal_kernel_from_isotropic,
-    get_isotropic_kernel_from_diagonal_operators,
+    get_isotropic_kernel_from_diagonal_operators_stacked,
 )
 from surface_potential_analysis.kernel.solve import (
     get_noise_operators_diagonal_eigenvalue,
     get_noise_operators_real_isotropic_stacked_fft,
-    get_noise_operators_real_isotropic_taylor_expansion,
+)
+from surface_potential_analysis.kernel.solve._taylor import (
+    get_noise_operators_real_isotropic_stacked_taylor_expansion,
 )
 from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.potential.conversion import (
@@ -69,6 +71,7 @@ from surface_potential_analysis.wavepacket.wavepacket import (
 )
 
 if TYPE_CHECKING:
+    from surface_potential_analysis.basis.basis_like import BasisLike
     from surface_potential_analysis.basis.explicit_basis import (
         ExplicitStackedBasisWithLength,
     )
@@ -120,7 +123,7 @@ class SimulationConfig:
     type: Literal["bloch", "wannier"]
     temperature: float
     fit_method: FitMethod = "fft"
-    n_polynomial: int | None = None
+    n_polynomial: tuple[int, ...] | None = None
 
 
 HYDROGEN_NICKEL_SYSTEM = PeriodicSystem(
@@ -171,11 +174,11 @@ def _get_interpolated_potential(
     interpolated_basis = TupleBasis(
         *tuple(
             TransformedPositionBasis[Any, Any, Any](
-                old.delta_x,
-                old.n,
+                potential["basis"][i].delta_x,
+                potential["basis"][i].n,
                 r,
             )
-            for (old, r) in zip(potential["basis"], resolution)
+            for (i, r) in enumerate(resolution)
         ),
     )
 
@@ -204,12 +207,12 @@ def _get_extrapolated_potential(
     extrapolated_basis = TupleBasis(
         *tuple(
             EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any](
-                old.delta_x * s,
-                n=old.n,
+                potential["basis"][i].delta_x * s,
+                n=potential["basis"][i].n,
                 step=s,
                 offset=0,
             )
-            for (old, s) in zip(potential["basis"], shape)
+            for (i, s) in enumerate(shape)
         ),
     )
 
@@ -416,7 +419,8 @@ def get_true_noise_kernel(
 ) -> IsotropicNoiseKernel[
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
 ]:
-    basis = stacked_basis_as_fundamental_position_basis(_get_basis(system, config))
+    basis = _get_basis(system, config)
+
     a, lambda_ = get_effective_gaussian_parameters(
         basis,
         system.eta,
@@ -429,47 +433,42 @@ def get_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> SingleBasisDiagonalNoiseOperatorList[
-    FundamentalBasis[int],
+    BasisLike[Any, Any],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
+    kernel = get_true_noise_kernel(system, config)
     if config.fit_method == "explicit polynomial":
-        basis = stacked_basis_as_fundamental_position_basis(_get_basis(system, config))
+        basis = _get_basis(system, config)
+
         a, lambda_ = get_effective_gaussian_parameters(
             basis,
             system.eta,
             config.temperature,
         )
-        return get_gaussian_operators_explicit_taylor(
+        return get_gaussian_operators_explicit_taylor_stacked(
             basis,
             a,
             lambda_,
-            n_terms=config.n_polynomial,
+            shape=config.n_polynomial,
         )
-
-    kernel = get_true_noise_kernel(system, config)
     match config.fit_method:
         case "fitted polynomial":
-            return get_noise_operators_real_isotropic_taylor_expansion(
+            return get_noise_operators_real_isotropic_stacked_taylor_expansion(
                 kernel,
-                n=config.n_polynomial,
+                shape=config.n_polynomial,
             )
         case "fft":
             operators = get_noise_operators_real_isotropic_stacked_fft(
                 kernel,
             )
+
             if config.n_polynomial is None:
-                return {
-                    "basis": TupleBasis(
-                        FundamentalBasis(operators["basis"][0].n),
-                        operators["basis"][1],
-                    ),
-                    "data": operators["data"],
-                    "eigenvalue": operators["eigenvalue"],
-                }
+                return operators
             return truncate_diagonal_noise_operator_list(
                 operators,
-                range(2 * config.n_polynomial + 1),
+                range(2 * config.n_polynomial[0] + 1),
             )
+
         case "eigenvalue":
             operators = get_noise_operators_diagonal_eigenvalue(
                 as_diagonal_kernel_from_isotropic(kernel),
@@ -479,7 +478,7 @@ def get_noise_operators(
                 return operators
             return truncate_diagonal_noise_operator_list(
                 operators,
-                range(2 * config.n_polynomial + 1),
+                range(2 * config.n_polynomial[0] + 1),
             )
 
 
@@ -490,14 +489,14 @@ def get_noise_kernel(
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
 ]:
     operators = get_noise_operators(system, config)
-    return get_isotropic_kernel_from_diagonal_operators(operators)
+    return get_isotropic_kernel_from_diagonal_operators_stacked(operators)
 
 
 def get_temperature_corrected_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> SingleBasisNoiseOperatorList[
-    FundamentalBasis[int],
+    BasisLike[Any, Any],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
     operators = get_noise_operators(system, config)
