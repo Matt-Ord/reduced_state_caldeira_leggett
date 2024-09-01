@@ -29,20 +29,22 @@ from surface_potential_analysis.kernel.build import (
     truncate_diagonal_noise_operator_list,
 )
 from surface_potential_analysis.kernel.gaussian import (
-    get_2d_effective_gaussian_parameters,
-    get_axis_gaussian_isotropic_noise_kernels,
-    get_stacked_gaussian_isotropic_noise_kernels,
-    get_stacked_gaussian_operators_explicit_taylor,
+    get_effective_gaussian_parameters,
+    get_gaussian_axis_noise_kernel,
+    get_gaussian_operators_explicit_taylor_stacked,
 )
 from surface_potential_analysis.kernel.kernel import (
     IsotropicNoiseKernel,
     as_diagonal_kernel_from_isotropic,
+    as_isotropic_kernel_from_axis,
     get_isotropic_kernel_from_diagonal_operators,
 )
 from surface_potential_analysis.kernel.solve import (
     get_noise_operators_diagonal_eigenvalue,
     get_noise_operators_real_isotropic_stacked_fft,
-    get_stacked_noise_operators_real_isotropic_taylor_expansion,
+)
+from surface_potential_analysis.kernel.solve._taylor import (
+    get_noise_operators_real_isotropic_stacked_taylor_expansion,
 )
 from surface_potential_analysis.operator.operator import as_operator
 from surface_potential_analysis.potential.conversion import (
@@ -416,28 +418,21 @@ def get_axis_true_noise_kernels(
     config: SimulationConfig,
 ) -> tuple[IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]], ...]:
     basis = _get_basis(system, config)
-    full_basis = tuple(
-        stacked_basis_as_fundamental_position_basis(TupleBasis(basis[i]))
-        for i in range(basis.ndim)
-    )
 
-    a, lambda_ = get_2d_effective_gaussian_parameters(
-        full_basis,
+    a, lambda_ = get_effective_gaussian_parameters(
+        basis,
         system.eta,
         config.temperature,
     )
-    return get_axis_gaussian_isotropic_noise_kernels(full_basis, a, lambda_)
+    return get_gaussian_axis_noise_kernel(basis, a, lambda_)
 
 
 def get_true_noise_kernel(
     system: PeriodicSystem,
     config: SimulationConfig,
-) -> IsotropicNoiseKernel[TupleBasis[*tuple[FundamentalPositionBasis[Any, Any]]]]:
-    kernels: tuple[
-        IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]],
-        ...,
-    ] = get_axis_true_noise_kernels(system, config)
-    return get_stacked_gaussian_isotropic_noise_kernels(kernels)
+) -> IsotropicNoiseKernel[TupleBasis[*tuple[FundamentalPositionBasis[Any, Any], ...]]]:
+    kernels = get_axis_true_noise_kernels(system, config)
+    return as_isotropic_kernel_from_axis(kernels)
 
 
 def get_noise_operators(
@@ -445,33 +440,28 @@ def get_noise_operators(
     config: SimulationConfig,
 ) -> SingleBasisDiagonalNoiseOperatorList[
     FundamentalBasis[int],
-    FundamentalPositionBasis[Any, Literal[1]],
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
     kernel = get_true_noise_kernel(system, config)
     if config.fit_method == "explicit polynomial":
         basis = _get_basis(system, config)
-        full_basis = tuple(
-            stacked_basis_as_fundamental_position_basis(TupleBasis(basis[i]))
-            for i in range(basis.ndim)
-        )
 
-        a, lambda_ = get_2d_effective_gaussian_parameters(
-            full_basis,
+        a, lambda_ = get_effective_gaussian_parameters(
+            basis,
             system.eta,
             config.temperature,
         )
-        return get_stacked_gaussian_operators_explicit_taylor(
-            kernel,
-            full_basis,
+        return get_gaussian_operators_explicit_taylor_stacked(
+            basis,
             a,
             lambda_,
             n_terms=config.n_polynomial,
         )
     match config.fit_method:
         case "fitted polynomial":
-            return get_stacked_noise_operators_real_isotropic_taylor_expansion(
+            return get_noise_operators_real_isotropic_stacked_taylor_expansion(
                 kernel,
-                n=config.n_polynomial,
+                shape=config.n_polynomial,
             )
         case "fft":
             operators = get_noise_operators_real_isotropic_stacked_fft(

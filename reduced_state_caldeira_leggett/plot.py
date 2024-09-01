@@ -12,14 +12,14 @@ from surface_potential_analysis.kernel.kernel import (
     as_diagonal_kernel_from_full,
     as_diagonal_kernel_from_isotropic,
     as_full_kernel_from_diagonal,
-    as_isotropic_kernel_from_diagonal,
+    as_isotropic_kernel_from_diagonal_stacked,
     get_diagonal_kernel_from_diagonal_operators,
     get_full_kernel_from_operators,
 )
 from surface_potential_analysis.kernel.plot import (
     plot_diagonal_kernel_2d,
     plot_diagonal_kernel_truncation_error,
-    plot_isotropic_kernel_error,
+    plot_isotropic_kernel_error_1d_x,
     plot_isotropic_noise_kernel_1d_x,
     plot_isotropic_noise_kernel_2d_x,
     plot_kernel_2d,
@@ -66,6 +66,9 @@ from reduced_state_caldeira_leggett.system import (
 )
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+    from matplotlib.lines import Line2D
     from surface_potential_analysis.state_vector.eigenstate_list import (
         StatisticalValueList,
     )
@@ -548,7 +551,29 @@ def plot_operators_fit_time_against_n_polynomial(
     input()
 
 
-def plot_kernel_error_comparison(
+def plot_noise_kernel_error_1d(
+    system: PeriodicSystem,
+    config: SimulationConfig,
+    *,
+    ax: Axes | None = None,
+) -> tuple[Figure, Axes, Line2D]:
+    fig, ax = get_figure(ax)
+
+    true_kernel = get_true_noise_kernel(system, config)
+    operators = get_noise_operators(system, config)
+    fitted_kernel = get_diagonal_kernel_from_diagonal_operators(operators)
+    fitted_kernel = as_isotropic_kernel_from_diagonal_stacked(fitted_kernel)
+    fig, _, line = plot_isotropic_kernel_error_1d_x(true_kernel, fitted_kernel, ax=ax)
+    line.set_label(
+        f"{config.fit_method} method, {config.n_polynomial} terms",
+    )
+
+    ax.set_ylabel("Percentage Error, %")
+
+    return fig, ax, line
+
+
+def plot_noise_kernel_error_comparison(
     system: PeriodicSystem,
     configs: Sequence[SimulationConfig],
 ) -> None:
@@ -556,24 +581,13 @@ def plot_kernel_error_comparison(
     lines = []
 
     for config in configs:
-        true_kernel = get_true_noise_kernel(system, config)
-        operators = get_noise_operators(system, config)
-        fitted_kernel = get_diagonal_kernel_from_diagonal_operators(operators)
-        fitted_kernel = as_isotropic_kernel_from_diagonal(
-            fitted_kernel,
-            assert_isotropic=True,
-        )
-        fig, _, line = plot_isotropic_kernel_error(true_kernel, fitted_kernel, ax=ax)
-        line.set_label(
-            f"{config.fit_method} method, {config.n_polynomial} terms",
-        )
+        _, _, line = plot_noise_kernel_error_1d(system, config, ax=ax)
         lines.append(line)
 
     ax.set_title(
         "Comparison of noise kernel percentage error,\n"
-        f"with {configs[0].shape[0]*configs[0].resolution[0]} states",
+        f"with {configs[0].shape[0] * configs[0].resolution[0]} states",
     )
-    ax.set_ylabel("Percentage Error, %")
     ax.legend()
     fig.show()
 

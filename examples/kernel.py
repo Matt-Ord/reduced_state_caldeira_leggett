@@ -1,8 +1,8 @@
 import numpy as np
 
 from reduced_state_caldeira_leggett.plot import (
-    plot_kernel_error_comparison,
     plot_noise_kernel,
+    plot_noise_kernel_error_comparison,
     plot_noise_operators,
     plot_operators_fit_time_against_n_polynomial,
     plot_operators_fit_time_against_number_of_states,
@@ -36,7 +36,7 @@ if __name__ == "__main__":
         fit_method="fft",
         n_polynomial=(10,),
     )
-    plot_kernel_error_comparison(
+    plot_noise_kernel_error_comparison(
         system,
         [config, config1],
     )
