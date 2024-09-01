@@ -16,8 +16,7 @@ if __name__ == "__main__":
         n_bands=9,
         type="bloch",
         temperature=150,
-        fit_method="fitted polynomial",
-        n_polynomial=(3, 4),
+        fit_method="fft",
     )
     fig, _, _ = plot_noise_kernel_error_1d(system, config)
     fig.show()

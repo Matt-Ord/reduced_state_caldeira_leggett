@@ -30,14 +30,13 @@ from surface_potential_analysis.kernel.build import (
 )
 from surface_potential_analysis.kernel.gaussian import (
     get_effective_gaussian_parameters,
-    get_gaussian_axis_noise_kernel,
+    get_gaussian_isotropic_noise_kernel,
     get_gaussian_operators_explicit_taylor_stacked,
 )
 from surface_potential_analysis.kernel.kernel import (
     IsotropicNoiseKernel,
     as_diagonal_kernel_from_isotropic,
-    as_isotropic_kernel_from_axis,
-    get_isotropic_kernel_from_diagonal_operators,
+    get_isotropic_kernel_from_diagonal_operators_stacked,
 )
 from surface_potential_analysis.kernel.solve import (
     get_noise_operators_diagonal_eigenvalue,
@@ -72,6 +71,7 @@ from surface_potential_analysis.wavepacket.wavepacket import (
 )
 
 if TYPE_CHECKING:
+    from surface_potential_analysis.basis.basis_like import BasisLike
     from surface_potential_analysis.basis.explicit_basis import (
         ExplicitStackedBasisWithLength,
     )
@@ -174,11 +174,11 @@ def _get_interpolated_potential(
     interpolated_basis = TupleBasis(
         *tuple(
             TransformedPositionBasis[Any, Any, Any](
-                old.delta_x,
-                old.n,
+                potential["basis"][i].delta_x,
+                potential["basis"][i].n,
                 r,
             )
-            for (old, r) in zip(potential["basis"], resolution)
+            for (i, r) in enumerate(resolution)
         ),
     )
 
@@ -207,12 +207,12 @@ def _get_extrapolated_potential(
     extrapolated_basis = TupleBasis(
         *tuple(
             EvenlySpacedTransformedPositionBasis[Any, Any, Any, Any](
-                old.delta_x * s,
-                n=old.n,
+                potential["basis"][i].delta_x * s,
+                n=potential["basis"][i].n,
                 step=s,
                 offset=0,
             )
-            for (old, s) in zip(potential["basis"], shape)
+            for (i, s) in enumerate(shape)
         ),
     )
 
@@ -413,10 +413,12 @@ def get_hamiltonian(
     return get_full_wannier_hamiltonian(wavefunctions, operator)
 
 
-def get_axis_true_noise_kernels(
+def get_true_noise_kernel(
     system: PeriodicSystem,
     config: SimulationConfig,
-) -> tuple[IsotropicNoiseKernel[FundamentalPositionBasis[Any, Any]], ...]:
+) -> IsotropicNoiseKernel[
+    TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
+]:
     basis = _get_basis(system, config)
 
     a, lambda_ = get_effective_gaussian_parameters(
@@ -424,22 +426,14 @@ def get_axis_true_noise_kernels(
         system.eta,
         config.temperature,
     )
-    return get_gaussian_axis_noise_kernel(basis, a, lambda_)
-
-
-def get_true_noise_kernel(
-    system: PeriodicSystem,
-    config: SimulationConfig,
-) -> IsotropicNoiseKernel[TupleBasis[*tuple[FundamentalPositionBasis[Any, Any], ...]]]:
-    kernels = get_axis_true_noise_kernels(system, config)
-    return as_isotropic_kernel_from_axis(kernels)
+    return get_gaussian_isotropic_noise_kernel(basis, a, lambda_)
 
 
 def get_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> SingleBasisDiagonalNoiseOperatorList[
-    FundamentalBasis[int],
+    BasisLike[Any, Any],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
     kernel = get_true_noise_kernel(system, config)
@@ -455,7 +449,7 @@ def get_noise_operators(
             basis,
             a,
             lambda_,
-            n_terms=config.n_polynomial,
+            shape=config.n_polynomial,
         )
     match config.fit_method:
         case "fitted polynomial":
@@ -468,14 +462,7 @@ def get_noise_operators(
                 kernel,
             )
             if config.n_polynomial is None:
-                return {
-                    "basis": TupleBasis(
-                        FundamentalBasis(operators["basis"][0].n),
-                        operators["basis"][1],
-                    ),
-                    "data": operators["data"].ravel(),
-                    "eigenvalue": operators["eigenvalue"].ravel(),
-                }
+                return operators
             truncated_operators = truncate_diagonal_noise_operator_list(
                 operators,
                 range(2 * config.n_polynomial[0] + 1),
@@ -510,17 +497,14 @@ def get_noise_kernel(
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]]
 ]:
     operators = get_noise_operators(system, config)
-    return get_isotropic_kernel_from_diagonal_operators(
-        operators,
-        assert_isotropic=False,
-    )
+    return get_isotropic_kernel_from_diagonal_operators_stacked(operators)
 
 
 def get_temperature_corrected_noise_operators(
     system: PeriodicSystem,
     config: SimulationConfig,
 ) -> SingleBasisNoiseOperatorList[
-    FundamentalBasis[int],
+    BasisLike[Any, Any],
     TupleBasisWithLengthLike[*tuple[FundamentalPositionBasis[Any, Any], ...]],
 ]:
     operators = get_noise_operators(system, config)
